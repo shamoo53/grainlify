@@ -77,6 +77,7 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
   });
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
 
   // Filter options data
   const filterOptions = {
@@ -139,7 +140,7 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
   useEffect(() => {
     const loadProjects = async () => {
       setIsLoading(true);
-      setError(null);
+      setHasError(false);
       try {
         const params: {
           language?: string;
@@ -164,13 +165,22 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
 
         const response = await getPublicProjects(params);
         
-        // Check if response and projects array exist
-        if (!response || !response.projects || !Array.isArray(response.projects)) {
-          throw new Error('Invalid response format from server');
+        console.log('BrowsePage: API response received', { response });
+        
+        // Handle response - check if it's valid
+        let projectsArray: any[] = [];
+        if (response && response.projects && Array.isArray(response.projects)) {
+          projectsArray = response.projects;
+        } else if (Array.isArray(response)) {
+          // Handle case where API returns array directly
+          projectsArray = response;
+        } else {
+          console.warn('BrowsePage: Unexpected response format', response);
+          projectsArray = [];
         }
         
         // Map API response to Project interface
-        const mappedProjects: Project[] = response.projects
+        const mappedProjects: Project[] = projectsArray
           .filter((p) => p && p.id && p.github_full_name) // Filter out invalid entries
           .map((p) => {
             const repoName = p.github_full_name.split('/')[1] || p.github_full_name;
@@ -189,13 +199,34 @@ export function BrowsePage({ onProjectClick }: BrowsePageProps) {
             };
           });
 
+        console.log('BrowsePage: Mapped projects', { count: mappedProjects.length });
         setProjects(mappedProjects);
         setIsLoading(false);
+        setHasError(false);
       } catch (err) {
-        console.error('Failed to fetch projects:', err);
-        // Keep loading state true to show skeleton forever when backend is down
-        setProjects([]);
-        // Don't set isLoading to false - keep showing skeleton
+        console.error('BrowsePage: Failed to fetch projects:', err);
+        // Check if it's a network error (backend down) vs other errors
+        const isNetworkError = err instanceof TypeError || 
+                              (err instanceof Error && (
+                                err.message.includes('fetch') || 
+                                err.message.includes('network') ||
+                                err.message.includes('Unable to connect') ||
+                                err.message.includes('Failed to fetch')
+                              ));
+        
+        if (isNetworkError) {
+          // Backend is down - keep showing skeleton forever
+          console.log('BrowsePage: Network error detected, keeping skeleton loader');
+          setProjects([]);
+          setHasError(true);
+          // Don't set isLoading to false - keep showing skeleton
+        } else {
+          // Other error (e.g., invalid response, auth error) - show empty state
+          console.log('BrowsePage: Non-network error, showing empty state');
+          setProjects([]);
+          setIsLoading(false);
+          setHasError(true);
+        }
       }
     };
 

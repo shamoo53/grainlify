@@ -95,22 +95,30 @@ func NeedsMigration(ctx context.Context, pool *pgxpool.Pool) (bool, error) {
 func getLatestMigrationVersion(src source.Driver) (uint, error) {
 	firstVersion, err := src.First()
 	if err != nil {
+		// If no migrations exist, return 0
 		return 0, fmt.Errorf("get first migration: %w", err)
 	}
 
 	var latestVersion uint = firstVersion
 	currentVersion := firstVersion
+	maxIterations := 1000 // Safety limit to prevent infinite loops
+	iterations := 0
 
-	for {
+	for iterations < maxIterations {
 		nextVersion, err := src.Next(currentVersion)
 		if err != nil {
-			// No more migrations
+			// No more migrations - this is expected
 			break
 		}
 		if nextVersion > latestVersion {
 			latestVersion = nextVersion
 		}
 		currentVersion = nextVersion
+		iterations++
+	}
+
+	if iterations >= maxIterations {
+		return 0, fmt.Errorf("too many migrations, possible infinite loop")
 	}
 
 	return latestVersion, nil

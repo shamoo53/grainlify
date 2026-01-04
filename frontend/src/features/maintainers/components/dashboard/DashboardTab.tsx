@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Eye, FileText, GitPullRequest, GitMerge } from 'lucide-react';
 import { useTheme } from '../../../../shared/contexts/ThemeContext';
 import { StatsCard } from './StatsCard';
+import { StatsCardSkeleton } from './StatsCardSkeleton';
 import { ActivityItem } from './ActivityItem';
 import { ApplicationsChart } from './ApplicationsChart';
 import { StatCard, Activity, ChartDataPoint } from '../../types';
@@ -87,10 +88,11 @@ export function DashboardTab({ selectedProjects, onRefresh }: DashboardTabProps)
 
       setIssues(allIssues);
       setPrs(allPRs);
+      setIsLoading(false);
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
-    } finally {
-      setIsLoading(false);
+      // Keep loading state true to show skeleton forever when backend is down
+      // Don't set isLoading to false - keep showing skeleton
     }
   };
 
@@ -294,9 +296,15 @@ export function DashboardTab({ selectedProjects, onRefresh }: DashboardTabProps)
     <>
       {/* Stats Cards */}
       <div className="grid grid-cols-5 gap-5">
-        {stats.map((stat, idx) => (
-          <StatsCard key={stat.id} stat={stat} index={idx} />
-        ))}
+        {isLoading ? (
+          [...Array(5)].map((_, idx) => (
+            <StatsCardSkeleton key={idx} />
+          ))
+        ) : (
+          stats.map((stat, idx) => (
+            <StatsCard key={stat.id} stat={stat} index={idx} />
+          ))
+        )}
       </div>
 
       {/* Main Content: Last Activity & Applications History */}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { ExternalLink, Copy, CircleDot, ArrowLeft } from 'lucide-react';
+import { ExternalLink, Copy, Circle, ArrowLeft, GitPullRequest } from 'lucide-react';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { getPublicProject, getPublicProjectIssues, getPublicProjectPRs } from '../../../shared/api/client';
 import { SkeletonLoader } from '../../../shared/components/SkeletonLoader';
@@ -170,12 +170,34 @@ export function ProjectDetailPage({ onBack, onIssueClick, projectId: propProject
   }, [issues, prs]);
   
   const recentPRs = useMemo(() => {
-    return prs.map((p) => ({
-      number: String(p.number),
+    const allPRs = prs.map((p) => ({
+      type: 'pr' as const,
+      id: p.github_pr_id,
+      number: p.number,
       title: p.title,
-      date: (p.updated_at || p.last_seen_at || '').slice(0, 10),
+      date: timeAgo(p.updated_at || p.last_seen_at),
     }));
-  }, [prs]);
+
+    const allIssues = issues.map((issue) => ({
+      type: 'issue' as const,
+      id: issue.github_issue_id,
+      number: issue.number,
+      title: issue.title,
+      date: timeAgo(issue.updated_at || issue.last_seen_at),
+    }));
+
+    const combined = [...allPRs, ...allIssues].sort((a, b) => {
+      const dateA = a.type === 'pr' 
+        ? prs.find(p => p.github_pr_id === a.id)?.updated_at || prs.find(p => p.github_pr_id === a.id)?.last_seen_at || ''
+        : issues.find(i => i.github_issue_id === a.id)?.updated_at || issues.find(i => i.github_issue_id === a.id)?.last_seen_at || '';
+      const dateB = b.type === 'pr'
+        ? prs.find(p => p.github_pr_id === b.id)?.updated_at || prs.find(p => p.github_pr_id === b.id)?.last_seen_at || ''
+        : issues.find(i => i.github_issue_id === b.id)?.updated_at || issues.find(i => i.github_issue_id === b.id)?.last_seen_at || '';
+      return new Date(dateB).getTime() - new Date(dateA).getTime();
+    });
+
+    return combined;
+  }, [prs, issues, timeAgo]);
   
   const [showAllIssues, setShowAllIssues] = useState(false);
   const [showAllActivity, setShowAllActivity] = useState(false);
@@ -743,7 +765,10 @@ export function ProjectDetailPage({ onBack, onIssueClick, projectId: propProject
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-start gap-3 flex-1">
-                    <CircleDot className="w-5 h-5 text-[#4ade80] flex-shrink-0 mt-0.5" />
+                    {/* Issue Icon - Same as maintainers */}
+                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#c9983a]/50 to-[#d4af37]/40 flex items-center justify-center border border-[#c9983a]/40 flex-shrink-0 mt-0.5">
+                      <Circle className="w-2.5 h-2.5 text-white fill-white" strokeWidth={0} />
+                    </div>
                     <h3 className={`text-[15px] font-bold transition-colors ${
                       theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
                     }`}>{issue.title}</h3>
@@ -850,12 +875,29 @@ export function ProjectDetailPage({ onBack, onIssueClick, projectId: propProject
                 }`}
               >
                 <div className="flex items-center gap-3">
-                      <div className="px-2 py-1 rounded-[6px] bg-[#4ade80]/20 border border-[#4ade80]/30">
-                        <span className="text-[11px] font-bold text-[#4ade80]">#{activity.number}</span>
-                      </div>
-                      <span className={`text-[14px] font-semibold transition-colors ${
-                        theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
-                      }`}>{activity.title}</span>
+                  {activity.type === 'issue' ? (
+                    // Issue Icon - Same as maintainers
+                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#c9983a]/50 to-[#d4af37]/40 flex items-center justify-center border border-[#c9983a]/40 flex-shrink-0">
+                      <Circle className="w-2.5 h-2.5 text-white fill-white" strokeWidth={0} />
+                    </div>
+                  ) : (
+                    // PR Icon
+                    <div className={`w-5 h-5 rounded-full flex items-center justify-center border flex-shrink-0 ${
+                      theme === 'dark'
+                        ? 'bg-[#c9983a]/50 border-[#c9983a]/40'
+                        : 'bg-[#c9983a]/50 border-[#c9983a]/40'
+                    }`}>
+                      <GitPullRequest className="w-3 h-3 text-white" strokeWidth={2.5} />
+                    </div>
+                  )}
+                  <div className="px-2 py-1 rounded-[6px] bg-gradient-to-br from-[#c9983a]/50 to-[#d4af37]/40 border border-[#c9983a]/40">
+                    <span className={`text-[11px] font-bold ${
+                      theme === 'dark' ? 'text-white' : 'text-white'
+                    }`}>#{activity.number}</span>
+                  </div>
+                  <span className={`text-[14px] font-semibold transition-colors ${
+                    theme === 'dark' ? 'text-[#f5f5f5]' : 'text-[#2d2820]'
+                  }`}>{activity.title}</span>
                 </div>
                 <span className={`text-[13px] transition-colors ${
                   theme === 'dark' ? 'text-[#d4d4d4]' : 'text-[#7a6b5a]'

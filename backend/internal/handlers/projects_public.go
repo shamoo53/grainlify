@@ -128,7 +128,32 @@ WHERE p.id = $1 AND p.status = 'verified' AND p.deleted_at IS NULL
 
 		var repo github.Repo
 		repoOK := false
-		if r, err := gh.GetRepo(ctx, "", fullName); err == nil {
+		r, repoErr := gh.GetRepo(ctx, "", fullName)
+		if repoErr != nil {
+			// If GitHub fetch fails (404/403), it's likely a private repo
+			errStr := repoErr.Error()
+			if strings.Contains(errStr, "404") || strings.Contains(errStr, "403") || strings.Contains(errStr, "Not Found") {
+				slog.Info("project is private or inaccessible",
+					"project_id", projectID,
+					"github_full_name", fullName,
+					"error", repoErr,
+				)
+				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "project_not_accessible"})
+			}
+			slog.Warn("failed to fetch repo metadata from GitHub",
+				"project_id", projectID,
+				"github_full_name", fullName,
+				"error", repoErr,
+			)
+		} else {
+			// Check if repo is private
+			if r.Private {
+				slog.Info("project is private",
+					"project_id", projectID,
+					"github_full_name", fullName,
+				)
+				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "project_not_accessible"})
+			}
 			repo = r
 			repoOK = true
 			// Prefer live counts from GitHub if available
@@ -139,12 +164,6 @@ WHERE p.id = $1 AND p.status = 'verified' AND p.deleted_at IS NULL
 UPDATE projects SET stars_count=$2, forks_count=$3, updated_at=now()
 WHERE id=$1
 `, projectID, stars, forks)
-		} else {
-			slog.Warn("failed to fetch repo metadata from GitHub",
-				"project_id", projectID,
-				"github_full_name", fullName,
-				"error", err,
-			)
 		}
 
 		// GitHub language breakdown (best effort)
@@ -507,8 +526,31 @@ LIMIT $%d OFFSET $%d
 			}
 
 			// Get repo description from GitHub (best effort)
+			// Skip private repos - we can't fetch their data without authentication
 			var description string
-			if repo, err := gh.GetRepo(ctx, "", fullName); err == nil {
+			repo, repoErr := gh.GetRepo(ctx, "", fullName)
+			if repoErr != nil {
+				// If GitHub fetch fails (404/403), it's likely a private repo
+				// Skip private repositories - we can't access their content without auth
+				errStr := repoErr.Error()
+				if strings.Contains(errStr, "404") || strings.Contains(errStr, "403") || strings.Contains(errStr, "Not Found") {
+					slog.Info("skipping private or inaccessible repository",
+						"project_id", id,
+						"github_full_name", fullName,
+						"error", repoErr,
+					)
+					continue // Skip this project
+				}
+				// For other errors, continue without description
+			} else {
+				// Check if repo is private
+				if repo.Private {
+					slog.Info("skipping private repository",
+						"project_id", id,
+						"github_full_name", fullName,
+					)
+					continue // Skip this project
+				}
 				description = repo.Description
 				// If stars or forks are 0, update them from GitHub
 				if stars == 0 {
@@ -525,27 +567,6 @@ UPDATE projects SET stars_count=$2, forks_count=$3, updated_at=now()
 WHERE id=$1
 `, projectID, st, fk)
 					}(id, stars, forks)
-				}
-			} else {
-				// If GitHub fetch fails, try to fetch fresh data in background
-				if stars == 0 || forks == 0 {
-					go func(projectID uuid.UUID, projectFullName string) {
-						ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-						defer cancel()
-						gh := github.NewClient()
-						if r, err := gh.GetRepo(ctx, "", projectFullName); err == nil {
-							slog.Info("fetched fresh stars/forks from GitHub for project", "project_id", projectID, "full_name", projectFullName, "stars", r.StargazersCount, "forks", r.ForksCount)
-							_, err := h.db.Pool.Exec(ctx, `
-UPDATE projects SET stars_count=$2, forks_count=$3, updated_at=now()
-WHERE id=$1
-`, projectID, r.StargazersCount, r.ForksCount)
-							if err != nil {
-								slog.Warn("failed to persist fresh stars/forks for project", "project_id", projectID, "error", err)
-							}
-						} else {
-							slog.Warn("failed to fetch fresh stars/forks from GitHub for project", "project_id", projectID, "full_name", projectFullName, "error", err)
-						}
-					}(id, fullName)
 				}
 			}
 
@@ -687,8 +708,31 @@ LIMIT $1
 			}
 
 			// Get repo description and fresh data from GitHub (best effort)
+			// Skip private repos - we can't fetch their data without authentication
 			var description string
-			if repo, err := gh.GetRepo(ctx, "", fullName); err == nil {
+			repo, repoErr := gh.GetRepo(ctx, "", fullName)
+			if repoErr != nil {
+				// If GitHub fetch fails (404/403), it's likely a private repo
+				// Skip private repositories - we can't access their content without auth
+				errStr := repoErr.Error()
+				if strings.Contains(errStr, "404") || strings.Contains(errStr, "403") || strings.Contains(errStr, "Not Found") {
+					slog.Info("skipping private or inaccessible repository in recommended",
+						"project_id", id,
+						"github_full_name", fullName,
+						"error", repoErr,
+					)
+					continue // Skip this project
+				}
+				// For other errors, continue without description
+			} else {
+				// Check if repo is private
+				if repo.Private {
+					slog.Info("skipping private repository in recommended",
+						"project_id", id,
+						"github_full_name", fullName,
+					)
+					continue // Skip this project
+				}
 				description = repo.Description
 				// Prefer live counts from GitHub if available
 				if repo.StargazersCount > 0 {

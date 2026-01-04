@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, ExternalLink, User, ChevronDown, Plus, Award, Users, Star, CheckCircle, MessageSquare, Filter, Search, Loader2, AlertCircle } from 'lucide-react';
+import { X, ExternalLink, User, ChevronDown, Plus, Award, Users, Star, CheckCircle, MessageSquare, Filter, Search, Loader2 } from 'lucide-react';
 import { useTheme } from '../../../../shared/contexts/ThemeContext';
 import { Issue } from '../../types';
 import { EmptyIssueState } from './EmptyIssueState';
@@ -67,7 +67,6 @@ export function IssuesTab({ onNavigate, selectedProjects, onRefresh }: IssuesTab
   const [expandedApplications, setExpandedApplications] = useState<Record<string, boolean>>({});
   const [issues, setIssues] = useState<Array<IssueFromAPI & { projectName: string; projectId: string }>>([]);
   const [isLoadingIssues, setIsLoadingIssues] = useState(true);
-  const [issuesError, setIssuesError] = useState<string | null>(null);
 
   // Helper function to format time ago (memoized)
   const formatTimeAgo = useCallback((dateString: string | null): string => {
@@ -96,7 +95,6 @@ export function IssuesTab({ onNavigate, selectedProjects, onRefresh }: IssuesTab
 
   const loadIssues = async () => {
     setIsLoadingIssues(true);
-    setIssuesError(null);
     try {
       if (selectedProjects.length === 0) {
         setIssues([]);
@@ -130,12 +128,12 @@ export function IssuesTab({ onNavigate, selectedProjects, onRefresh }: IssuesTab
       });
 
       setIssues(flattenedIssues);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to load issues';
-      setIssuesError(errorMessage);
-      setIssues([]);
-    } finally {
       setIsLoadingIssues(false);
+    } catch (err) {
+      console.error('Failed to load issues:', err);
+      // Keep loading state true to show skeleton forever when backend is down
+      setIssues([]);
+      // Don't set isLoadingIssues to false - keep showing skeleton
     }
   };
 
@@ -277,15 +275,6 @@ export function IssuesTab({ onNavigate, selectedProjects, onRefresh }: IssuesTab
               {[...Array(8)].map((_, idx) => (
                 <IssueCardSkeleton key={idx} />
               ))}
-            </div>
-          ) : issuesError ? (
-            <div className={`flex items-center gap-3 px-4 py-4 mx-4 rounded-[12px] ${
-              isDark
-                ? 'bg-red-500/10 border border-red-500/30 text-red-400'
-                : 'bg-red-100 border border-red-300 text-red-700'
-            }`}>
-              <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              <span className="text-[14px] font-medium">{issuesError}</span>
             </div>
           ) : issues.length === 0 ? (
             <div className={`px-6 py-8 text-center ${
