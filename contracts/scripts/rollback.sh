@@ -59,7 +59,7 @@
 #   - Contract must have upgrade(new_wasm_hash) function
 #
 # POST-ROLLBACK CHECKLIST:
-#   [ ] Verify contract is responsive (./scripts/verify-deployment.sh)
+#   [ ] Verify contract is responsive (./contracts/scripts/verify-deployment.sh)
 #   [ ] Check if data migration is needed
 #   [ ] Test critical contract functions
 #   [ ] Update documentation/status
@@ -445,7 +445,7 @@ perform_rollback() {
     echo ""
     echo -e "  ${YELLOW}⚠️  POST-ROLLBACK CHECKLIST:${NC}"
     echo "  ────────────────────────────"
-    echo "  [ ] Run verification: ./scripts/verify-deployment.sh $CONTRACT_ID"
+    echo "  [ ] Run verification: ./contracts/scripts/verify-deployment.sh $CONTRACT_ID"
     echo "  [ ] Check if data migration is needed"
     echo "  [ ] Test critical contract functions"
     echo "  [ ] Review contract state for inconsistencies"

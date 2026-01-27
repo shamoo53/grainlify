@@ -7,13 +7,13 @@ wasm_hash.txt
 
 # Deployment Scripts - Sensitive Files
 # Keep templates, ignore local overrides
-scripts/config/*.env.local
-scripts/config/.env
+contracts/scripts/config/*.env.local
+contracts/scripts/config/.env
 
 # Deployment Records (may contain contract addresses)
 # Review before committing to public repos
-deployments/*.json
-!deployments/.gitkeep
+contracts/deployments/*.json
+!contracts/deployments/.gitkeep
 
 # Soroban Local Data
 .soroban/

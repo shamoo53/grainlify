@@ -62,7 +62,7 @@ stellar keys fund grainlify-deployer --network testnet
 cd soroban && cargo build --release --target wasm32-unknown-unknown
 
 # 4. Deploy
-cd .. && ./scripts/deploy.sh soroban/target/wasm32-unknown-unknown/release/escrow.wasm
+cd .. && ./contracts/scripts/deploy.sh soroban/target/wasm32-unknown-unknown/release/escrow.wasm
 ```
 
 ---
@@ -71,7 +71,7 @@ cd .. && ./scripts/deploy.sh soroban/target/wasm32-unknown-unknown/release/escro
 
 ### Environment Files
 
-Configuration is stored in `scripts/config/`:
+Configuration is stored in `contracts/scripts/config/`:
 
 | File | Purpose |
 |------|---------|
@@ -85,13 +85,13 @@ Configuration is stored in `scripts/config/`:
 ```bash
 # The default testnet.env works out of the box
 # Optionally create a local override:
-cp scripts/config/testnet.env scripts/config/testnet.env.local
+cp contracts/scripts/config/testnet.env contracts/scripts/config/testnet.env.local
 ```
 
 2. **Edit key values:**
 
 ```bash
-# scripts/config/testnet.env
+# contracts/scripts/config/testnet.env
 
 # Network endpoint
 SOROBAN_RPC_URL="https://soroban-testnet.stellar.org"
@@ -136,7 +136,7 @@ stellar keys generate --global grainlify-mainnet-deployer
 3. **Update mainnet config:**
 
 ```bash
-# scripts/config/mainnet.env
+# contracts/scripts/config/mainnet.env
 DEPLOYER_IDENTITY="grainlify-mainnet-deployer"
 ```
 
@@ -151,7 +151,7 @@ Deploys a new smart contract to the network.
 #### Usage
 
 ```bash
-./scripts/deploy.sh <wasm_file> [options]
+./contracts/scripts/deploy.sh <wasm_file> [options]
 ```
 
 #### Options
@@ -170,26 +170,26 @@ Deploys a new smart contract to the network.
 
 ```bash
 # Deploy escrow contract to testnet
-./scripts/deploy.sh soroban/target/wasm32-unknown-unknown/release/escrow.wasm
+./contracts/scripts/deploy.sh soroban/target/wasm32-unknown-unknown/release/escrow.wasm
 
 # Deploy with custom name
-./scripts/deploy.sh escrow.wasm -N bounty-escrow-v1
+./contracts/scripts/deploy.sh escrow.wasm -N bounty-escrow-v1
 
 # Deploy and initialize with admin
-./scripts/deploy.sh escrow.wasm --init --init-args '--admin GABC...'
+./contracts/scripts/deploy.sh escrow.wasm --init --init-args '--admin GABC...'
 
 # Deploy to mainnet (requires confirmation)
-./scripts/deploy.sh escrow.wasm -n mainnet -i mainnet-deployer
+./contracts/scripts/deploy.sh escrow.wasm -n mainnet -i mainnet-deployer
 
 # Dry run (see what would happen)
-./scripts/deploy.sh escrow.wasm --dry-run --verbose
+./contracts/scripts/deploy.sh escrow.wasm --dry-run --verbose
 ```
 
 #### Output
 
 On success, the script:
 1. Prints the new **Contract ID**
-2. Records the deployment in `deployments/<network>.json`
+2. Records the deployment in `contracts/deployments/<network>.json`
 
 ```
 Contract ID: CABC123DEF456...
@@ -204,7 +204,7 @@ Upgrades an existing contract to a new WASM version.
 #### Usage
 
 ```bash
-./scripts/upgrade.sh <contract_id> <new_wasm_path> [options]
+./contracts/scripts/upgrade.sh <contract_id> <new_wasm_path> [options]
 ```
 
 #### Options
@@ -220,16 +220,16 @@ Upgrades an existing contract to a new WASM version.
 
 ```bash
 # Upgrade contract on testnet
-./scripts/upgrade.sh CABC123... ./target/release/escrow.wasm
+./contracts/scripts/upgrade.sh CABC123... ./target/release/escrow.wasm
 
 # Upgrade on mainnet with specific identity
-./scripts/upgrade.sh CABC123... escrow.wasm -n mainnet -s admin-key
+./contracts/scripts/upgrade.sh CABC123... escrow.wasm -n mainnet -s admin-key
 
 # Upgrade without verification
-./scripts/upgrade.sh CABC123... escrow.wasm --skip-verify
+./contracts/scripts/upgrade.sh CABC123... escrow.wasm --skip-verify
 
 # Preview upgrade (dry run)
-./scripts/upgrade.sh CABC123... escrow.wasm --dry-run
+./contracts/scripts/upgrade.sh CABC123... escrow.wasm --dry-run
 ```
 
 #### How It Works
@@ -237,7 +237,7 @@ Upgrades an existing contract to a new WASM version.
 1. **Installs** the new WASM code (gets `wasm_hash`)
 2. **Invokes** the contract's `upgrade(new_wasm_hash)` function
 3. **Verifies** the contract responds after upgrade
-4. **Logs** the upgrade to `deployments/upgrades.json`
+4. **Logs** the upgrade to `contracts/deployments/upgrades.json`
 
 #### Prerequisites
 
@@ -253,7 +253,7 @@ Checks if a deployed contract is healthy and responsive.
 #### Usage
 
 ```bash
-./scripts/verify-deployment.sh <contract_id> [options]
+./contracts/scripts/verify-deployment.sh <contract_id> [options]
 ```
 
 #### Options
@@ -270,19 +270,19 @@ Checks if a deployed contract is healthy and responsive.
 
 ```bash
 # Basic health check
-./scripts/verify-deployment.sh CABC123...
+./contracts/scripts/verify-deployment.sh CABC123...
 
 # Check on mainnet
-./scripts/verify-deployment.sh CABC123... -n mainnet
+./contracts/scripts/verify-deployment.sh CABC123... -n mainnet
 
 # Use custom verification function
-./scripts/verify-deployment.sh CABC123... -f get_balance
+./contracts/scripts/verify-deployment.sh CABC123... -f get_balance
 
 # Verify admin matches expected
-./scripts/verify-deployment.sh CABC123... --check-admin --expected-admin GABC...
+./contracts/scripts/verify-deployment.sh CABC123... --check-admin --expected-admin GABC...
 
 # JSON output (for CI/CD pipelines)
-./scripts/verify-deployment.sh CABC123... --json
+./contracts/scripts/verify-deployment.sh CABC123... --json
 ```
 
 #### Output
@@ -322,7 +322,7 @@ Result:          1
 
 ```bash
 # In a GitHub Action or script
-if ./scripts/verify-deployment.sh "$CONTRACT_ID" --json; then
+if ./contracts/scripts/verify-deployment.sh "$CONTRACT_ID" --json; then
   echo "Deployment verified"
 else
   echo "Deployment failed verification"
@@ -339,7 +339,7 @@ Reverts a contract to a previous WASM version.
 #### Usage
 
 ```bash
-./scripts/rollback.sh <contract_id> <previous_wasm_hash> [options]
+./contracts/scripts/rollback.sh <contract_id> <previous_wasm_hash> [options]
 ```
 
 #### Options
@@ -355,29 +355,29 @@ Reverts a contract to a previous WASM version.
 
 ```bash
 # From upgrade log (most recent)
-cat deployments/upgrades.json | jq -r '.upgrades[-1].old_wasm_hash'
+cat contracts/deployments/upgrades.json | jq -r '.upgrades[-1].old_wasm_hash'
 
 # List all upgrades for a contract
-cat deployments/upgrades.json | jq '.upgrades[] | select(.contract_id == "CABC123...")'
+cat contracts/deployments/upgrades.json | jq '.upgrades[] | select(.contract_id == "CABC123...")'
 
 # From deployment log
-cat deployments/testnet.json | jq -r '.deployments[] | select(.contract_name == "escrow") | .wasm_hash'
+cat contracts/deployments/testnet.json | jq -r '.deployments[] | select(.contract_name == "escrow") | .wasm_hash'
 ```
 
 #### Examples
 
 ```bash
 # Rollback to previous version
-./scripts/rollback.sh CABC123... 7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b
+./contracts/scripts/rollback.sh CABC123... 7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b
 
 # Rollback on mainnet (double confirmation required)
-./scripts/rollback.sh CABC123... 7a8b9c0d... -n mainnet
+./contracts/scripts/rollback.sh CABC123... 7a8b9c0d... -n mainnet
 
 # Force rollback (skip prompts - dangerous!)
-./scripts/rollback.sh CABC123... 7a8b9c0d... --force
+./contracts/scripts/rollback.sh CABC123... 7a8b9c0d... --force
 
 # Dry run
-./scripts/rollback.sh CABC123... 7a8b9c0d... --dry-run
+./contracts/scripts/rollback.sh CABC123... 7a8b9c0d... --dry-run
 ```
 
 #### Critical Warning
@@ -455,7 +455,7 @@ Before deploying to mainnet:
 
 ## Deployment Registry
 
-All deployments and operations are logged in `deployments/`:
+All deployments and operations are logged in `contracts/deployments/`:
 
 | File | Contents |
 |------|----------|
@@ -490,13 +490,13 @@ All deployments and operations are logged in `deployments/`:
 
 ```bash
 # List all deployed contracts
-cat deployments/testnet.json | jq '.deployments[].contract_name'
+cat contracts/deployments/testnet.json | jq '.deployments[].contract_name'
 
 # Get contract ID by name
-cat deployments/testnet.json | jq -r '.deployments[] | select(.contract_name == "escrow") | .contract_id'
+cat contracts/deployments/testnet.json | jq -r '.deployments[] | select(.contract_name == "escrow") | .contract_id'
 
 # View upgrade history
-cat deployments/upgrades.json | jq '.upgrades[] | {contract: .contract_name, from: .old_wasm_hash, to: .new_wasm_hash, date: .upgraded_at}'
+cat contracts/deployments/upgrades.json | jq '.upgrades[] | {contract: .contract_name, from: .old_wasm_hash, to: .new_wasm_hash, date: .upgraded_at}'
 ```
 
 ---
@@ -562,7 +562,7 @@ Possible causes:
 stellar contract install --wasm old_contract.wasm --network testnet
 
 # Then retry rollback with the returned hash
-./scripts/rollback.sh CABC123... <returned_hash>
+./contracts/scripts/rollback.sh CABC123... <returned_hash>
 ```
 
 #### "Network unreachable"
@@ -580,13 +580,13 @@ stellar contract install --wasm old_contract.wasm --network testnet
 
 ```bash
 # View script help
-./scripts/deploy.sh --help
-./scripts/upgrade.sh --help
-./scripts/verify-deployment.sh --help
-./scripts/rollback.sh --help
+./contracts/scripts/deploy.sh --help
+./contracts/scripts/upgrade.sh --help
+./contracts/scripts/verify-deployment.sh --help
+./contracts/scripts/rollback.sh --help
 
 # Enable verbose mode for debugging
-./scripts/deploy.sh contract.wasm --verbose
+./contracts/scripts/deploy.sh contract.wasm --verbose
 ```
 
 ---
@@ -594,26 +594,26 @@ stellar contract install --wasm old_contract.wasm --network testnet
 ## Directory Structure
 
 ```
-scripts/
-├── config/
-│   ├── testnet.env           # Testnet configuration
-│   └── mainnet.env           # Mainnet configuration
-├── utils/
-│   └── common.sh             # Shared utility functions
-├── deploy.sh                 # Deploy new contracts
-├── upgrade.sh                # Upgrade existing contracts
-├── verify-deployment.sh      # Health check contracts
-├── rollback.sh               # Revert to previous version
-├── upgrade_contract.sh       # Legacy upgrade script
-├── demo_upgrade.sh           # Upgrade demonstration
-└── README.md                 # This file
-
-deployments/
-├── .gitkeep
-├── testnet.json              # Testnet deployment log
-├── mainnet.json              # Mainnet deployment log
-├── upgrades.json             # Upgrade history
-└── rollbacks.json            # Rollback history
+contracts/
+├── scripts/
+│   ├── config/
+│   │   ├── testnet.env           # Testnet configuration
+│   │   └── mainnet.env           # Mainnet configuration
+│   ├── utils/
+│   │   └── common.sh             # Shared utility functions
+│   ├── deploy.sh                 # Deploy new contracts
+│   ├── upgrade.sh                # Upgrade existing contracts
+│   ├── verify-deployment.sh      # Health check contracts
+│   ├── rollback.sh               # Revert to previous version
+│   ├── upgrade_contract.sh       # Legacy upgrade script
+│   ├── demo_upgrade.sh           # Upgrade demonstration
+│   └── README.md                 # This file
+└── deployments/
+    ├── .gitkeep
+    ├── testnet.json              # Testnet deployment log
+    ├── mainnet.json              # Mainnet deployment log
+    ├── upgrades.json             # Upgrade history
+    └── rollbacks.json            # Rollback history
 ```
 
 ---

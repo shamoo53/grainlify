@@ -466,7 +466,7 @@ perform_upgrade() {
     echo "  Upgrade Log:     $UPGRADE_LOG"
     echo ""
     echo "  To rollback, run:"
-    echo "    ./scripts/rollback.sh $CONTRACT_ID <previous_wasm_hash>"
+    echo "    ./contracts/scripts/rollback.sh $CONTRACT_ID <previous_wasm_hash>"
     echo ""
 }
 
