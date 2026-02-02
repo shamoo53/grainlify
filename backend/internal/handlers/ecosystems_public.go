@@ -33,6 +33,7 @@ SELECT
   e.name,
   e.description,
   e.website_url,
+  e.logo_url,
   e.status,
   e.created_at,
   e.updated_at,
@@ -59,12 +60,13 @@ LIMIT 200
 				status     string
 				desc       *string
 				website    *string
+				logoURL    *string
 				createdAt  time.Time
 				updatedAt  time.Time
 				projectCnt int64
 				userCnt    int64
 			)
-			if err := rows.Scan(&id, &slug, &name, &desc, &website, &status, &createdAt, &updatedAt, &projectCnt, &userCnt); err != nil {
+			if err := rows.Scan(&id, &slug, &name, &desc, &website, &logoURL, &status, &createdAt, &updatedAt, &projectCnt, &userCnt); err != nil {
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "ecosystems_list_failed"})
 			}
 			out = append(out, fiber.Map{
@@ -73,6 +75,7 @@ LIMIT 200
 				"name":          name,
 				"description":   desc,
 				"website_url":   website,
+				"logo_url":      logoURL,
 				"status":        status,
 				"created_at":    createdAt,
 				"updated_at":    updatedAt,

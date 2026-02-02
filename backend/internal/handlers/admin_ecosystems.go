@@ -33,6 +33,7 @@ SELECT
   e.name,
   e.description,
   e.website_url,
+  e.logo_url,
   e.status,
   e.created_at,
   e.updated_at,
@@ -53,24 +54,25 @@ LIMIT 200
 		for rows.Next() {
 			var id uuid.UUID
 			var slug, name, status string
-			var desc, website *string
+			var desc, website, logoURL *string
 			var createdAt, updatedAt time.Time
 			var projectCnt int64
 			var userCnt int64
-			if err := rows.Scan(&id, &slug, &name, &desc, &website, &status, &createdAt, &updatedAt, &projectCnt, &userCnt); err != nil {
+			if err := rows.Scan(&id, &slug, &name, &desc, &website, &logoURL, &status, &createdAt, &updatedAt, &projectCnt, &userCnt); err != nil {
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "ecosystems_list_failed"})
 			}
 			out = append(out, fiber.Map{
-				"id":          id.String(),
-				"slug":        slug,
-				"name":        name,
-				"description": desc,
-				"website_url": website,
-				"status":      status,
-				"created_at":  createdAt,
-				"updated_at":  updatedAt,
+				"id":            id.String(),
+				"slug":         slug,
+				"name":         name,
+				"description":  desc,
+				"website_url":  website,
+				"logo_url":     logoURL,
+				"status":       status,
+				"created_at":   createdAt,
+				"updated_at":   updatedAt,
 				"project_count": projectCnt,
-				"user_count": userCnt,
+				"user_count":   userCnt,
 			})
 		}
 
@@ -79,11 +81,12 @@ LIMIT 200
 }
 
 type ecosystemUpsertRequest struct {
-	Slug       string `json:"slug"`
-	Name       string `json:"name"`
+	Slug        string `json:"slug"`
+	Name        string `json:"name"`
 	Description string `json:"description"`
-	WebsiteURL string `json:"website_url"`
-	Status     string `json:"status"` // active|inactive
+	WebsiteURL  string `json:"website_url"`
+	LogoURL     string `json:"logo_url"`
+	Status      string `json:"status"` // active|inactive
 }
 
 func (h *EcosystemsAdminHandler) Create() fiber.Handler {
@@ -114,10 +117,10 @@ func (h *EcosystemsAdminHandler) Create() fiber.Handler {
 
 		var id uuid.UUID
 		err := h.db.Pool.QueryRow(c.Context(), `
-INSERT INTO ecosystems (slug, name, description, website_url, status)
-VALUES ($1, $2, NULLIF($3,''), NULLIF($4,''), $5)
+INSERT INTO ecosystems (slug, name, description, website_url, logo_url, status)
+VALUES ($1, $2, NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), $6)
 RETURNING id
-`, slug, name, strings.TrimSpace(req.Description), strings.TrimSpace(req.WebsiteURL), status).Scan(&id)
+`, slug, name, strings.TrimSpace(req.Description), strings.TrimSpace(req.WebsiteURL), strings.TrimSpace(req.LogoURL), status).Scan(&id)
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "ecosystem_create_failed"})
 		}
@@ -162,10 +165,11 @@ SET slug = COALESCE($2, slug),
     name = COALESCE(NULLIF($3,''), name),
     description = COALESCE(NULLIF($4,''), description),
     website_url = COALESCE(NULLIF($5,''), website_url),
-    status = COALESCE(NULLIF($6,''), status),
+    logo_url = COALESCE(NULLIF($6,''), logo_url),
+    status = COALESCE(NULLIF($7,''), status),
     updated_at = now()
 WHERE id = $1
-`, ecoID, slugVal, name, strings.TrimSpace(req.Description), strings.TrimSpace(req.WebsiteURL), status)
+`, ecoID, slugVal, name, strings.TrimSpace(req.Description), strings.TrimSpace(req.WebsiteURL), strings.TrimSpace(req.LogoURL), status)
 		if errors.Is(err, pgx.ErrNoRows) || ct.RowsAffected() == 0 {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "ecosystem_not_found"})
 		}

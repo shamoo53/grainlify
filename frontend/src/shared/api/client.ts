@@ -490,6 +490,7 @@ export const getEcosystems = () =>
       slug: string;
       name: string;
       description: string | null;
+      logo_url: string | null;
       website_url: string | null;
       status: string;
       project_count: number;
@@ -569,6 +570,7 @@ export const createEcosystem = (data: {
   name: string;
   description?: string;
   website_url?: string;
+  logo_url?: string;
   status: "active" | "inactive";
 }) =>
   apiRequest<{
@@ -595,6 +597,7 @@ export const getAdminEcosystems = () =>
       slug: string;
       name: string;
       description: string | null;
+      logo_url: string | null;
       website_url: string | null;
       status: string;
       project_count: number;
@@ -619,6 +622,7 @@ export const updateEcosystem = (id: string, data: {
   name: string;
   description?: string;
   website_url?: string;
+  logo_url?: string;
   status: 'active' | 'inactive';
 }) =>
   apiRequest<{

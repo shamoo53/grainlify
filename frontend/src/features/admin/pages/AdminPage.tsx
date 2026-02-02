@@ -11,6 +11,7 @@ interface Ecosystem {
   slug: string;
   name: string;
   description: string | null;
+  logo_url: string | null;
   website_url: string | null;
   status: string;
   project_count: number;
@@ -31,12 +32,14 @@ export function AdminPage() {
   const [editFormData, setEditFormData] = useState({
     name: '',
     description: '',
+    logoUrl: '',
     status: 'active',
     websiteUrl: ''
   });
   const [formData, setFormData] = useState({
     name: '',
     description: '',
+    logoUrl: '',
     status: 'active',
     websiteUrl: ''
   });
@@ -387,6 +390,7 @@ export function AdminPage() {
         name: formData.name,
         description: formData.description || undefined,
         website_url: formData.websiteUrl || undefined,
+        logo_url: formData.logoUrl || undefined,
         status: formData.status as 'active' | 'inactive',
       });
 
@@ -396,6 +400,7 @@ export function AdminPage() {
       setFormData({
         name: '',
         description: '',
+        logoUrl: '',
         status: 'active',
         websiteUrl: ''
       });
@@ -416,6 +421,7 @@ export function AdminPage() {
     setEditFormData({
       name: ecosystem.name,
       description: ecosystem.description || '',
+      logoUrl: ecosystem.logo_url || '',
       status: ecosystem.status,
       websiteUrl: ecosystem.website_url || ''
     });
@@ -451,6 +457,7 @@ export function AdminPage() {
         name: editFormData.name,
         description: editFormData.description || undefined,
         website_url: editFormData.websiteUrl || undefined,
+        logo_url: editFormData.logoUrl || undefined,
         status: editFormData.status as 'active' | 'inactive',
       });
 
@@ -460,6 +467,7 @@ export function AdminPage() {
       setEditFormData({
         name: '',
         description: '',
+        logoUrl: '',
         status: 'active',
         websiteUrl: ''
       });
@@ -872,6 +880,51 @@ export function AdminPage() {
               error={errors.description}
             />
 
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-[#7a6b5a] dark:text-[#d4d4d4]">
+                Logo (optional)
+              </label>
+              <div className="flex items-center gap-4">
+                <label className="inline-flex items-center justify-center px-4 py-2 rounded-[10px] border border-dashed border-[#c9983a]/50 text-[13px] font-semibold cursor-pointer bg-white/40 dark:bg-white/10 hover:bg-white/60 dark:hover:bg-white/20 transition-colors">
+                  <span>Upload image</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) {
+                        setFormData(prev => ({ ...prev, logoUrl: '' }));
+                        return;
+                      }
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        if (typeof reader.result === 'string') {
+                          setFormData(prev => ({ ...prev, logoUrl: reader.result || '' }));
+                        }
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                </label>
+                {formData.logoUrl && (
+                  <div className="w-10 h-10 rounded-full overflow-hidden border border-white/30 bg-white/20 flex items-center justify-center">
+                    <img
+                      src={formData.logoUrl}
+                      alt="Logo preview"
+                      className="w-full h-full object-cover"
+                      onError={() => {
+                        setFormData(prev => ({ ...prev, logoUrl: '' }));
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+              <p className="text-[11px] text-[#7a6b5a] dark:text-[#b8a898]">
+                PNG or JPG, recommended size 128×128. Stored with the ecosystem.
+              </p>
+            </div>
+
             <ModalSelect
               label="Status"
               value={formData.status}
@@ -954,6 +1007,51 @@ export function AdminPage() {
               rows={4}
               error={errors.description}
             />
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-[#7a6b5a] dark:text-[#d4d4d4]">
+                Logo (optional)
+              </label>
+              <div className="flex items-center gap-4">
+                <label className="inline-flex items-center justify-center px-4 py-2 rounded-[10px] border border-dashed border-[#c9983a]/50 text-[13px] font-semibold cursor-pointer bg-white/40 dark:bg-white/10 hover:bg-white/60 dark:hover:bg-white/20 transition-colors">
+                  <span>Upload new image</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) {
+                        setEditFormData(prev => ({ ...prev, logoUrl: editingEcosystem?.logo_url || '' }));
+                        return;
+                      }
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        if (typeof reader.result === 'string') {
+                          setEditFormData(prev => ({ ...prev, logoUrl: reader.result || '' }));
+                        }
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                </label>
+                {editFormData.logoUrl && (
+                  <div className="w-10 h-10 rounded-full overflow-hidden border border-white/30 bg-white/20 flex items-center justify-center">
+                    <img
+                      src={editFormData.logoUrl}
+                      alt="Logo preview"
+                      className="w-full h-full object-cover"
+                      onError={() => {
+                        setEditFormData(prev => ({ ...prev, logoUrl: editingEcosystem?.logo_url || '' }));
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+              <p className="text-[11px] text-[#7a6b5a] dark:text-[#b8a898]">
+                Leave as is to keep the current logo, or upload a new one.
+              </p>
+            </div>
 
             <ModalSelect
               label="Status"
