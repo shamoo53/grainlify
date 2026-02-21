@@ -994,6 +994,20 @@ impl GrainlifyContract {
             panic!("Target version must be greater than current version");
         }
 
+        // Check if migration already completed
+        if env.storage().instance().has(&DataKey::MigrationState) {
+            let migration_state: MigrationState = env
+                .storage()
+                .instance()
+                .get(&DataKey::MigrationState)
+                .unwrap();
+
+            if migration_state.to_version >= target_version {
+                // Migration already completed, skip
+                return;
+            }
+        }
+
         // Execute version-specific migrations
         let mut from_version = current_version;
         while from_version < target_version {
