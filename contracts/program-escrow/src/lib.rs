@@ -1,674 +1,23 @@
-//! # Program Escrow Smart Contract
-//!
-//! A secure escrow system for managing hackathon and program prize pools on Stellar.
-//! This contract enables organizers to lock funds and distribute prizes to multiple
-//! winners through secure, auditable batch payouts.
-//!
-//! ## Overview
-//!
-//! The Program Escrow contract manages the complete lifecycle of hackathon/program prizes:
-//! 1. **Initialization**: Set up program with authorized payout controller
-//! 2. **Fund Locking**: Lock prize pool funds in escrow
-//! 3. **Batch Payouts**: Distribute prizes to multiple winners simultaneously
-//! 4. **Single Payouts**: Distribute individual prizes
-//! 5. **Tracking**: Maintain complete payout history and balance tracking
-//!
-//! ## Architecture
-//!
-//! ```text
-//! ┌─────────────────────────────────────────────────────────────────┐
-//! │              Program Escrow Architecture                         │
-//! ├─────────────────────────────────────────────────────────────────┤
-//! │                                                                  │
-//! │  ┌──────────────┐                                               │
-//! │  │  Organizer   │                                               │
-//! │  └──────┬───────┘                                               │
-//! │         │                                                        │
-//! │         │ 1. init_program()                                     │
-//! │         ▼                                                        │
-//! │  ┌──────────────────┐                                           │
-//! │  │  Program Created │                                           │
-//! │  └────────┬─────────┘                                           │
-//! │           │                                                      │
-//! │           │ 2. lock_program_funds()                             │
-//! │           ▼                                                      │
-//! │  ┌──────────────────┐                                           │
-//! │  │  Funds Locked    │                                           │
-//! │  │  (Prize Pool)    │                                           │
-//! │  └────────┬─────────┘                                           │
-//! │           │                                                      │
-//! │           │ 3. Hackathon happens...                             │
-//! │           │                                                      │
-//! │  ┌────────▼─────────┐                                           │
-//! │  │ Authorized       │                                           │
-//! │  │ Payout Key       │                                           │
-//! │  └────────┬─────────┘                                           │
-//! │           │                                                      │
-//! │    ┌──────┴───────┐                                             │
-//! │    │              │                                             │
-//! │    ▼              ▼                                             │
-//! │ batch_payout() single_payout()                                  │
-//! │    │              │                                             │
-//! │    ▼              ▼                                             │
-//! │ ┌─────────────────────────┐                                    │
-//! │ │   Winner 1, 2, 3, ...   │                                    │
-//! │ └─────────────────────────┘                                    │
-//! │                                                                  │
-//! │  Storage:                                                        │
-//! │  ┌──────────────────────────────────────────┐                  │
-//! │  │ ProgramData:                             │                  │
-//! │  │  - program_id                            │                  │
-//! │  │  - total_funds                           │                  │
-//! │  │  - remaining_balance                     │                  │
-//! │  │  - authorized_payout_key                 │                  │
-//! │  │  - payout_history: [PayoutRecord]        │                  │
-//! │  │  - token_address                         │                  │
-//! │  └──────────────────────────────────────────┘                  │
-//! └─────────────────────────────────────────────────────────────────┘
-//! ```
-//!
-//! ## Security Model
-//!
-//! ### Trust Assumptions
-//! - **Authorized Payout Key**: Trusted backend service that triggers payouts
-//! - **Organizer**: Trusted to lock appropriate prize amounts
-//! - **Token Contract**: Standard Stellar Asset Contract (SAC)
-//! - **Contract**: Trustless; operates according to programmed rules
-//!
-//! ### Key Security Features
-//! 1. **Single Initialization**: Prevents program re-configuration
-//! 2. **Authorization Checks**: Only authorized key can trigger payouts
-//! 3. **Balance Validation**: Prevents overdrafts
-//! 4. **Atomic Transfers**: All-or-nothing batch operations
-//! 5. **Complete Audit Trail**: Full payout history tracking
-//! 6. **Overflow Protection**: Safe arithmetic for all calculations
-//!
-//! ## Usage Example
-//!
-//! ```rust
-//! use soroban_sdk::{Address, Env, String, vec};
-//!
-//! // 1. Initialize program (one-time setup)
-//! let program_id = String::from_str(&env, "Hackathon2024");
-//! let backend = Address::from_string("GBACKEND...");
-//! let usdc_token = Address::from_string("CUSDC...");
-//!
-//! let program = escrow_client.init_program(
-//!     &program_id,
-//!     &backend,
-//!     &usdc_token
-//! );
-//!
-//! // 2. Lock prize pool (10,000 USDC)
-//! let prize_pool = 10_000_0000000; // 10,000 USDC (7 decimals)
-//! escrow_client.lock_program_funds(&prize_pool);
-//!
-//! // 3. After hackathon, distribute prizes
-//! let winners = vec![
-//!     &env,
-//!     Address::from_string("GWINNER1..."),
-//!     Address::from_string("GWINNER2..."),
-//!     Address::from_string("GWINNER3..."),
-//! ];
-//!
-//! let prizes = vec![
-//!     &env,
-//!     5_000_0000000,  // 1st place: 5,000 USDC
-//!     3_000_0000000,  // 2nd place: 3,000 USDC
-//!     2_000_0000000,  // 3rd place: 2,000 USDC
-//! ];
-//!
-//! escrow_client.batch_payout(&winners, &prizes);
-//! ```
-//!
-//! ## Event System
-//!
-//! The contract emits events for all major operations:
-//! - `ProgramInit`: Program initialization
-//! - `FundsLocked`: Prize funds locked
-//! - `BatchPayout`: Multiple prizes distributed
-//! - `Payout`: Single prize distributed
-//!
-//! ## Best Practices
-//!
-//! 1. **Verify Winners**: Confirm winner addresses off-chain before payout
-//! 2. **Test Payouts**: Use testnet for testing prize distributions
-//! 3. **Secure Backend**: Protect authorized payout key with HSM/multi-sig
-//! 4. **Audit History**: Review payout history before each distribution
-//! 5. **Balance Checks**: Verify remaining balance matches expectations
-//! 6. **Token Approval**: Ensure contract has token allowance before locking funds
-
-
-
-// ── Step 1: Add module declarations near the top of lib.rs ──────────────
-// (after `mod anti_abuse;` and before the contract struct)
-
-mod error_recovery;
-
-#[cfg(test)]
-mod error_recovery_tests;
-
-// ── Step 2: Add these public contract functions to the ProgramEscrowContract
-//    impl block (alongside the existing admin functions) ──────────────────
-
-    // ========================================================================
-    // Circuit Breaker Management
-    // ========================================================================
-
-    /// Register the circuit breaker admin. Can only be set once, or changed
-    /// by the existing admin.
-    ///
-    /// # Arguments
-    /// * `new_admin` - Address to register as circuit breaker admin
-    /// * `caller`    - Existing admin (None if setting for the first time)
-    pub fn set_circuit_admin(env: Env, new_admin: Address, caller: Option<Address>) {
-        error_recovery::set_circuit_admin(&env, new_admin, caller);
-    }
-
-    /// Returns the registered circuit breaker admin, if any.
-    pub fn get_circuit_admin(env: Env) -> Option<Address> {
-        error_recovery::get_circuit_admin(&env)
-    }
-
-    /// Returns the full circuit breaker status snapshot.
-    ///
-    /// # Returns
-    /// * `CircuitBreakerStatus` with state, failure/success counts, timestamps
-    pub fn get_circuit_status(env: Env) -> error_recovery::CircuitBreakerStatus {
-        error_recovery::get_status(&env)
-    }
-
-    /// Admin resets the circuit breaker.
-    ///
-    /// Transitions:
-    /// - Open     → HalfOpen  (probe mode)
-    /// - HalfOpen → Closed    (hard reset)
-    /// - Closed   → Closed    (no-op reset)
-    ///
-    /// # Panics
-    /// * If caller is not the registered circuit breaker admin
-    pub fn reset_circuit_breaker(env: Env, admin: Address) {
-        error_recovery::reset_circuit_breaker(&env, &admin);
-    }
-
-    /// Updates the circuit breaker configuration. Admin only.
-    ///
-    /// # Arguments
-    /// * `failure_threshold` - Consecutive failures needed to open circuit
-    /// * `success_threshold` - Consecutive successes in HalfOpen to close it
-    /// * `max_error_log`     - Maximum error log entries to retain
-    pub fn configure_circuit_breaker(
-        env: Env,
-        admin: Address,
-        failure_threshold: u32,
-        success_threshold: u32,
-        max_error_log: u32,
-    ) {
-        let stored = error_recovery::get_circuit_admin(&env);
-        match stored {
-            Some(ref a) if a == &admin => {
-                admin.require_auth();
-            }
-            _ => panic!("Unauthorized: only circuit breaker admin can configure"),
-        }
-        error_recovery::set_config(
-            &env,
-            error_recovery::CircuitBreakerConfig {
-                failure_threshold,
-                success_threshold,
-                max_error_log,
-            },
-        );
-    }
-
-    /// Returns the error log (last N failures recorded by the circuit breaker).
-    pub fn get_circuit_error_log(env: Env) -> soroban_sdk::Vec<error_recovery::ErrorEntry> {
-        error_recovery::get_error_log(&env)
-    }
-
-    /// Directly open the circuit (emergency lockout). Admin only.
-    pub fn emergency_open_circuit(env: Env, admin: Address) {
-        let stored = error_recovery::get_circuit_admin(&env);
-        match stored {
-            Some(ref a) if a == &admin => {
-                admin.require_auth();
-            }
-            _ => panic!("Unauthorized"),
-        }
-        error_recovery::open_circuit(&env);
-    }
-
-// ── Step 3: Wrap batch_payout and single_payout with circuit breaker ────
-//
-// In the existing batch_payout function, add at the very top (after getting
-// program_data but before the auth check):
-//
-//   use crate::error_recovery;
-//   if let Err(_) = error_recovery::check_and_allow(&env) {
-//       panic!("Circuit breaker is open: payout operations are temporarily disabled");
-//   }
-//
-// After a successful transfer loop, add:
-//   error_recovery::record_success(&env);
-//
-// If a transfer panics/fails, the circuit breaker failure should be recorded
-// via record_failure() before re-panicking.
-//
-// For a clean integration, wrap the token transfer call like this:
-//
-//   let transfer_ok = std::panic::catch_unwind(|| {
-//       token_client.transfer(&contract_address, &recipient.clone(), &net_amount);
-//   });
-//   match transfer_ok {
-//       Ok(_) => error_recovery::record_success(&env),
-//       Err(_) => {
-//           error_recovery::record_failure(
-//               &env,
-//               program_id.clone(),
-//               soroban_sdk::symbol_short!("batch_pay"),
-//               error_recovery::ERR_TRANSFER_FAILED,
-//           );
-//           panic!("Token transfer failed");
-//       }
-//   }
-//
-// Note: Soroban's environment panics abort the transaction, so in practice
-// you record the failure and re-panic. The circuit breaker state is committed
-// because Soroban persists storage writes made before the panic in tests
-// (but not in production transactions that abort). For full production
-// integration, use the `try_*` variants of client calls where available.
-
+#![no_std]
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, token, vec, Address, Env,
     String, Symbol, Vec,
 };
 
 // Event types
-const PROGRAM_INITIALIZED: Symbol = symbol_short!("ProgInit");
-const FUNDS_LOCKED: Symbol = symbol_short!("FundLock");
+const PROGRAM_INITIALIZED: Symbol = symbol_short!("PrgInit");
+const FUNDS_LOCKED: Symbol = symbol_short!("FndsLock");
 const BATCH_PAYOUT: Symbol = symbol_short!("BatchPay");
 const PAYOUT: Symbol = symbol_short!("Payout");
 
 // Storage keys
 const PROGRAM_DATA: Symbol = symbol_short!("ProgData");
-const FEE_CONFIG: Symbol = symbol_short!("FeeCfg");
+const SCHEDULES: Symbol = symbol_short!("Scheds");
+const RELEASE_HISTORY: Symbol = symbol_short!("RelHist");
+const NEXT_SCHEDULE_ID: Symbol = symbol_short!("NxtSched");
+const PROGRAM_INDEX: Symbol = symbol_short!("ProgIdx");
+const AUTH_KEY_INDEX: Symbol = symbol_short!("AuthIdx");
 
-// Fee rate is stored in basis points (1 basis point = 0.01%)
-// Example: 100 basis points = 1%, 1000 basis points = 10%
-const BASIS_POINTS: i128 = 10_000;
-const MAX_FEE_RATE: i128 = 1_000; // Maximum 10% fee
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FeeConfig {
-    pub lock_fee_rate: i128,    // Fee rate for lock operations (basis points)
-    pub payout_fee_rate: i128,  // Fee rate for payout operations (basis points)
-    pub fee_recipient: Address, // Address to receive fees
-    pub fee_enabled: bool,      // Global fee enable/disable flag
-}
-// ==================== MONITORING MODULE ====================
-mod monitoring {
-    use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol};
-
-    // Storage keys
-    const OPERATION_COUNT: &str = "op_count";
-    const USER_COUNT: &str = "usr_count";
-    const ERROR_COUNT: &str = "err_count";
-
-    // Event: Operation metric
-    #[contracttype]
-    #[derive(Clone, Debug)]
-    pub struct OperationMetric {
-        pub operation: Symbol,
-        pub caller: Address,
-        pub timestamp: u64,
-        pub success: bool,
-    }
-
-    // Event: Performance metric
-    #[contracttype]
-    #[derive(Clone, Debug)]
-    pub struct PerformanceMetric {
-        pub function: Symbol,
-        pub duration: u64,
-        pub timestamp: u64,
-    }
-
-    // Data: Health status
-    #[contracttype]
-    #[derive(Clone, Debug)]
-    pub struct HealthStatus {
-        pub is_healthy: bool,
-        pub last_operation: u64,
-        pub total_operations: u64,
-        pub contract_version: String,
-    }
-
-    // Data: Analytics
-    #[contracttype]
-    #[derive(Clone, Debug)]
-    pub struct Analytics {
-        pub operation_count: u64,
-        pub unique_users: u64,
-        pub error_count: u64,
-        pub error_rate: u32,
-    }
-
-    // Data: State snapshot
-    #[contracttype]
-    #[derive(Clone, Debug)]
-    pub struct StateSnapshot {
-        pub timestamp: u64,
-        pub total_operations: u64,
-        pub total_users: u64,
-        pub total_errors: u64,
-    }
-
-    // Data: Performance stats
-    #[contracttype]
-    #[derive(Clone, Debug)]
-    pub struct PerformanceStats {
-        pub function_name: Symbol,
-        pub call_count: u64,
-        pub total_time: u64,
-        pub avg_time: u64,
-        pub last_called: u64,
-    }
-
-    // Track operation
-    pub fn track_operation(env: &Env, operation: Symbol, caller: Address, success: bool) {
-        let key = Symbol::new(env, OPERATION_COUNT);
-        let count: u64 = env.storage().persistent().get(&key).unwrap_or(0);
-        env.storage().persistent().set(&key, &(count + 1));
-
-        if !success {
-            let err_key = Symbol::new(env, ERROR_COUNT);
-            let err_count: u64 = env.storage().persistent().get(&err_key).unwrap_or(0);
-            env.storage().persistent().set(&err_key, &(err_count + 1));
-        }
-
-        env.events().publish(
-            (symbol_short!("metric"), symbol_short!("op")),
-            OperationMetric {
-                operation,
-                caller,
-                timestamp: env.ledger().timestamp(),
-                success,
-            },
-        );
-    }
-
-    // Track performance
-    pub fn emit_performance(env: &Env, function: Symbol, duration: u64) {
-        let count_key = (Symbol::new(env, "perf_cnt"), function.clone());
-        let time_key = (Symbol::new(env, "perf_time"), function.clone());
-
-        let count: u64 = env.storage().persistent().get(&count_key).unwrap_or(0);
-        let total: u64 = env.storage().persistent().get(&time_key).unwrap_or(0);
-
-        env.storage().persistent().set(&count_key, &(count + 1));
-        env.storage()
-            .persistent()
-            .set(&time_key, &(total + duration));
-
-        env.events().publish(
-            (symbol_short!("metric"), symbol_short!("perf")),
-            PerformanceMetric {
-                function,
-                duration,
-                timestamp: env.ledger().timestamp(),
-            },
-        );
-    }
-
-    // Health check
-    pub fn health_check(env: &Env) -> HealthStatus {
-        let key = Symbol::new(env, OPERATION_COUNT);
-        let ops: u64 = env.storage().persistent().get(&key).unwrap_or(0);
-
-        HealthStatus {
-            is_healthy: true,
-            last_operation: env.ledger().timestamp(),
-            total_operations: ops,
-            contract_version: String::from_str(env, "1.0.0"),
-        }
-    }
-
-    // Get analytics
-    pub fn get_analytics(env: &Env) -> Analytics {
-        let op_key = Symbol::new(env, OPERATION_COUNT);
-        let usr_key = Symbol::new(env, USER_COUNT);
-        let err_key = Symbol::new(env, ERROR_COUNT);
-
-        let ops: u64 = env.storage().persistent().get(&op_key).unwrap_or(0);
-        let users: u64 = env.storage().persistent().get(&usr_key).unwrap_or(0);
-        let errors: u64 = env.storage().persistent().get(&err_key).unwrap_or(0);
-
-        let error_rate = if ops > 0 {
-            ((errors as u128 * 10000) / ops as u128) as u32
-        } else {
-            0
-        };
-
-        Analytics {
-            operation_count: ops,
-            unique_users: users,
-            error_count: errors,
-            error_rate,
-        }
-    }
-
-    // Get state snapshot
-    pub fn get_state_snapshot(env: &Env) -> StateSnapshot {
-        let op_key = Symbol::new(env, OPERATION_COUNT);
-        let usr_key = Symbol::new(env, USER_COUNT);
-        let err_key = Symbol::new(env, ERROR_COUNT);
-
-        StateSnapshot {
-            timestamp: env.ledger().timestamp(),
-            total_operations: env.storage().persistent().get(&op_key).unwrap_or(0),
-            total_users: env.storage().persistent().get(&usr_key).unwrap_or(0),
-            total_errors: env.storage().persistent().get(&err_key).unwrap_or(0),
-        }
-    }
-
-    // Get performance stats
-    pub fn get_performance_stats(env: &Env, function_name: Symbol) -> PerformanceStats {
-        let count_key = (Symbol::new(env, "perf_cnt"), function_name.clone());
-        let time_key = (Symbol::new(env, "perf_time"), function_name.clone());
-        let last_key = (Symbol::new(env, "perf_last"), function_name.clone());
-
-        let count: u64 = env.storage().persistent().get(&count_key).unwrap_or(0);
-        let total: u64 = env.storage().persistent().get(&time_key).unwrap_or(0);
-        let last: u64 = env.storage().persistent().get(&last_key).unwrap_or(0);
-
-        let avg = if count > 0 { total / count } else { 0 };
-
-        PerformanceStats {
-            function_name,
-            call_count: count,
-            total_time: total,
-            avg_time: avg,
-            last_called: last,
-        }
-    }
-}
-// ==================== END MONITORING MODULE ====================
-
-// ==================== ANTI-ABUSE MODULE ====================
-mod anti_abuse {
-    use soroban_sdk::{contracttype, symbol_short, Address, Env};
-
-    #[contracttype]
-    #[derive(Clone, Debug, Eq, PartialEq)]
-    pub struct AntiAbuseConfig {
-        pub window_size: u64,     // Window size in seconds
-        pub max_operations: u32,  // Max operations allowed in window
-        pub cooldown_period: u64, // Minimum seconds between operations
-    }
-
-    #[contracttype]
-    #[derive(Clone, Debug, Eq, PartialEq)]
-    pub struct AddressState {
-        pub last_operation_timestamp: u64,
-        pub window_start_timestamp: u64,
-        pub operation_count: u32,
-    }
-
-    #[contracttype]
-    #[derive(Clone, Debug, Eq, PartialEq)]
-    pub enum AntiAbuseKey {
-        Config,
-        State(Address),
-        Whitelist(Address),
-        Admin,
-    }
-
-    pub fn get_config(env: &Env) -> AntiAbuseConfig {
-        env.storage()
-            .instance()
-            .get(&AntiAbuseKey::Config)
-            .unwrap_or(AntiAbuseConfig {
-                window_size: 3600, // 1 hour default
-                max_operations: 10,
-                cooldown_period: 60, // 1 minute default
-            })
-    }
-
-    pub fn set_config(env: &Env, config: AntiAbuseConfig) {
-        env.storage().instance().set(&AntiAbuseKey::Config, &config);
-    }
-
-    pub fn is_whitelisted(env: &Env, address: Address) -> bool {
-        env.storage()
-            .instance()
-            .has(&AntiAbuseKey::Whitelist(address))
-    }
-
-    pub fn set_whitelist(env: &Env, address: Address, whitelisted: bool) {
-        if whitelisted {
-            env.storage()
-                .instance()
-                .set(&AntiAbuseKey::Whitelist(address), &true);
-        } else {
-            env.storage()
-                .instance()
-                .remove(&AntiAbuseKey::Whitelist(address));
-        }
-    }
-
-    pub fn get_admin(env: &Env) -> Option<Address> {
-        env.storage().instance().get(&AntiAbuseKey::Admin)
-    }
-
-    pub fn set_admin(env: &Env, admin: Address) {
-        env.storage().instance().set(&AntiAbuseKey::Admin, &admin);
-    }
-
-    pub fn check_rate_limit(env: &Env, address: Address) {
-        if is_whitelisted(env, address.clone()) {
-            return;
-        }
-
-        let config = get_config(env);
-        let now = env.ledger().timestamp();
-        let key = AntiAbuseKey::State(address.clone());
-
-        let mut state: AddressState =
-            env.storage()
-                .persistent()
-                .get(&key)
-                .unwrap_or(AddressState {
-                    last_operation_timestamp: 0,
-                    window_start_timestamp: now,
-                    operation_count: 0,
-                });
-
-        // 1. Cooldown check
-        if state.last_operation_timestamp > 0
-            && now
-                < state
-                    .last_operation_timestamp
-                    .saturating_add(config.cooldown_period)
-        {
-            env.events().publish(
-                (symbol_short!("abuse"), symbol_short!("cooldown")),
-                (address.clone(), now),
-            );
-            panic!("Operation in cooldown period");
-        }
-
-        // 2. Window check
-        if now
-            >= state
-                .window_start_timestamp
-                .saturating_add(config.window_size)
-        {
-            // New window
-            state.window_start_timestamp = now;
-            state.operation_count = 1;
-        } else {
-            // Same window
-            if state.operation_count >= config.max_operations {
-                env.events().publish(
-                    (symbol_short!("abuse"), symbol_short!("limit")),
-                    (address.clone(), now),
-                );
-                panic!("Rate limit exceeded");
-            }
-            state.operation_count += 1;
-        }
-
-        state.last_operation_timestamp = now;
-        env.storage().persistent().set(&key, &state);
-
-        // Extend TTL for state (approx 1 day)
-        env.storage().persistent().extend_ttl(&key, 17280, 17280);
-    }
-}
-
-// ============================================================================
-// Event Types
-// ============================================================================
-
-/// Event emitted when a program is initialized/registerd
-
-const PROGRAM_REGISTERED: Symbol = symbol_short!("ProgReg");
-
-// ============================================================================
-// Storage Keys
-// ============================================================================
-
-/// Storage key for the program registry (list of all program IDs)
-const PROGRAM_REGISTRY: Symbol = symbol_short!("ProgReg");
-
-// ============================================================================
-// Data Structures
-// ============================================================================
-
-// ============================================================================
-// Data Structures
-// ============================================================================
-
-/// Record of an individual payout transaction.
-///
-/// # Fields
-/// * `recipient` - Address that received the payout
-/// * `amount` - Amount transferred (in token's smallest denomination)
-/// * `timestamp` - Unix timestamp when payout was executed
-///
-/// # Usage
-/// These records are stored in the payout history to provide a complete
-/// audit trail of all prize distributions.
-///
-/// # Example
-/// ```rust
-/// let record = PayoutRecord {
-///     recipient: winner_address,
-///     amount: 1000_0000000, // 1000 USDC
-///     timestamp: env.ledger().timestamp(),
-/// };
-/// ```
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PayoutRecord {
@@ -677,183 +26,39 @@ pub struct PayoutRecord {
     pub timestamp: u64,
 }
 
-/// Time-based release schedule for program funds.
-///
-/// # Fields
-/// * `schedule_id` - Unique identifier for this schedule
-/// * `amount` - Amount to release (in token's smallest denomination)
-/// * `release_timestamp` - Unix timestamp when funds become available for release
-/// * `recipient` - Address that will receive the funds
-/// * `released` - Whether this schedule has been executed
-/// * `released_at` - Timestamp when the schedule was executed (None if not released)
-/// * `released_by` - Address that triggered the release (None if not released)
-///
-/// # Usage
-/// Used to implement milestone-based payouts and scheduled distributions for programs.
-/// Multiple schedules can be created per program for complex vesting patterns.
-///
-/// # Example
-/// ```rust
-/// let schedule = ProgramReleaseSchedule {
-///     schedule_id: 1,
-///     amount: 500_0000000, // 500 tokens
-///     release_timestamp: current_time + (30 * 24 * 60 * 60), // 30 days
-///     recipient: winner_address,
-///     released: false,
-///     released_at: None,
-///     released_by: None,
-/// };
-/// ```
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProgramReleaseSchedule {
-    pub schedule_id: u64,
-    pub amount: i128,
-    pub release_timestamp: u64,
-    pub recipient: Address,
-    pub released: bool,
-    pub released_at: Option<u64>,
-    pub released_by: Option<Address>,
-}
-
-/// History record for executed program release schedules.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProgramReleaseHistory {
-    pub schedule_id: u64,
-    pub program_id: String,
-    pub amount: i128,
-    pub recipient: Address,
-    pub released_at: u64,
-    pub released_by: Address,
-    pub release_type: ReleaseType,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ClaimRecord {
-    pub bounty_id: u64,
-    pub recipient: Address,
-    pub amount: i128,
-    pub expires_at: u64,
-    pub claimed: bool,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ClaimStatus {
-    Pending,
-    Claimed,
-    Cancelled,
-    Expired,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ClaimCreated {
-    pub bounty_id: u64,
-    pub recipient: Address,
-    pub amount: i128,
-    pub expires_at: u64,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ClaimExecuted {
-    pub bounty_id: u64,
-    pub recipient: Address,
-    pub amount: i128,
-    pub claimed_at: u64,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ClaimCancelled {
-    pub bounty_id: u64,
-    pub recipient: Address,
-    pub amount: i128,
-    pub cancelled_at: u64,
-    pub cancelled_by: Address,
-}
-
-/// Type of release execution for programs.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ReleaseType {
-    Automatic, // Released automatically after timestamp
-    Manual,    // Released manually by authorized party
-}
-
-/// Event emitted when a program release schedule is created.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProgramScheduleCreated {
-    pub program_id: String,
-    pub schedule_id: u64,
-    pub amount: i128,
-    pub release_timestamp: u64,
-    pub recipient: Address,
-    pub created_by: Address,
-}
-
-/// Event emitted when a program release schedule is executed.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProgramScheduleReleased {
-    pub program_id: String,
-    pub schedule_id: u64,
-    pub amount: i128,
-    pub recipient: Address,
-    pub released_at: u64,
-    pub released_by: Address,
-    pub release_type: ReleaseType,
-}
-
-/// Complete program state and configuration.
-///
-/// # Fields
-/// * `program_id` - Unique identifier for the program/hackathon
-/// * `total_funds` - Total amount of funds locked (cumulative)
-/// * `remaining_balance` - Current available balance for payouts
-/// * `authorized_payout_key` - Address authorized to trigger payouts
-/// * `payout_history` - Complete record of all payouts
-/// * `token_address` - Token contract used for transfers
-///
-/// # Storage
-/// Stored in instance storage with key `PROGRAM_DATA`.
-///
-/// # Invariants
-/// - `remaining_balance <= total_funds` (always)
-/// - `remaining_balance = total_funds - sum(payout_history.amounts)`
-/// - `payout_history` is append-only
-/// - `program_id` and `authorized_payout_key` are immutable after init
-///
-/// # Example
-/// ```rust
-/// let program_data = ProgramData {
-///     program_id: String::from_str(&env, "Hackathon2024"),
-///     total_funds: 10_000_0000000,
-///     remaining_balance: 7_000_0000000,
-///     authorized_payout_key: backend_address,
-///     payout_history: vec![&env],
-///     token_address: usdc_token_address,
-/// };
-/// ```
-
-/// Complete program state and configuration.
-///
-/// # Storage Key
-/// Stored with key: `("Program", program_id)`
-///
-/// # Invariants
-/// - `remaining_balance <= total_funds` (always)
-/// - `remaining_balance = total_funds - sum(payout_history.amounts)`
-/// - `payout_history` is append-only
-/// - `program_id` and `authorized_payout_key` are immutable after registration
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProgramData {
     pub program_id: String,
+    pub total_funds: i128,
+    pub remaining_balance: i128,
+    pub authorized_payout_key: Address,
+    pub payout_history: Vec<PayoutRecord>,
+    pub token_address: Address, // Token contract address for transfers
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProgramReleaseSchedule {
+    pub schedule_id: u64,
+    pub recipient: Address,
+    pub amount: i128,
+    pub release_timestamp: u64,
+    pub released: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProgramReleaseHistory {
+    pub schedule_id: u64,
+    pub recipient: Address,
+    pub amount: i128,
+    pub released_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProgramAggregateStats {
     pub total_funds: i128,
     pub remaining_balance: i128,
     pub authorized_payout_key: Address,
@@ -912,118 +117,37 @@ pub struct PayoutApproval {
     pub recipient: Address,
     pub amount: i128,
     pub approvals: Vec<Address>,
+    pub total_paid_out: i128,
+    pub payout_count: u32,
+    pub scheduled_count: u32,
+    pub released_count: u32,
 }
-
-// ============================================================================
-// Contract Implementation
-// ============================================================================
 
 #[contract]
 pub struct ProgramEscrowContract;
 
-// Event symbols for program release schedules
-const PROG_SCHEDULE_CREATED: soroban_sdk::Symbol = soroban_sdk::symbol_short!("prg_sch_c");
-const PROG_SCHEDULE_RELEASED: soroban_sdk::Symbol = soroban_sdk::symbol_short!("prg_sch_r");
-
 #[contractimpl]
 impl ProgramEscrowContract {
-    // ========================================================================
-    // Program Registration & Initialization
-    // ========================================================================
-
-    /// Initializes a new program escrow for managing prize distributions.
+    /// Initialize a new program escrow
     ///
     /// # Arguments
-    /// * `env` - The contract environment
-    /// * `program_id` - Unique identifier for this program/hackathon
+    /// * `program_id` - Unique identifier for the program/hackathon
     /// * `authorized_payout_key` - Address authorized to trigger payouts (backend)
-    /// * `token_address` - Address of the token contract for transfers (e.g., USDC)
+    /// * `token_address` - Address of the token contract to use for transfers
     ///
     /// # Returns
-    /// * `ProgramData` - The initialized program configuration
-    ///
-    /// # Panics
-    /// * If program is already initialized
-    ///
-    /// # State Changes
-    /// - Creates ProgramData with zero balances
-    /// - Sets authorized payout key (immutable after this)
-    /// - Initializes empty payout history
-    /// - Emits ProgramInitialized event
-    ///
-    /// # Security Considerations
-    /// - Can only be called once (prevents re-configuration)
-    /// - No authorization required (first-caller initialization)
-    /// - Authorized payout key should be a secure backend service
-    /// - Token address must be a valid Stellar Asset Contract
-    /// - Program ID should be unique and descriptive
-    ///
-    /// # Events
-    /// Emits: `ProgramInit(program_id, authorized_payout_key, token_address, 0)`
-    ///
-    /// # Example
-    /// ```rust
-    /// use soroban_sdk::{Address, String, Env};
-    ///
-    /// let program_id = String::from_str(&env, "ETHGlobal2024");
-    /// let backend = Address::from_string("GBACKEND...");
-    /// let usdc = Address::from_string("CUSDC...");
-    ///
-    /// let program = escrow_client.init_program(
-    ///     &program_id,
-    ///     &backend,
-    ///     &usdc
-    /// );
-    ///
-    /// println!("Program created: {}", program.program_id);
-    /// ```
-    ///
-    /// # Production Setup
-    /// ```bash
-    /// # Deploy contract
-    /// stellar contract deploy \
-    ///   --wasm target/wasm32-unknown-unknown/release/escrow.wasm \
-    ///   --source ORGANIZER_KEY
-    ///
-    /// # Initialize program
-    /// stellar contract invoke \
-    ///   --id CONTRACT_ID \
-    ///   --source ORGANIZER_KEY \
-    ///   -- init_program \
-    ///   --program_id "Hackathon2024" \
-    ///   --authorized_payout_key GBACKEND... \
-    ///   --token_address CUSDC...
-    /// ```
-    ///
-    /// # Gas Cost
-    /// Low - Initial storage writes
-
-    pub fn initialize_program(
+    /// The initialized ProgramData
+    pub fn init_program(
         env: Env,
         program_id: String,
         authorized_payout_key: Address,
         token_address: Address,
     ) -> ProgramData {
-        // Apply rate limiting
-        anti_abuse::check_rate_limit(&env, authorized_payout_key.clone());
-
-        let start = env.ledger().timestamp();
-        let caller = authorized_payout_key.clone();
-
-        // Validate program_id
-        if program_id.is_empty() {
-            monitoring::track_operation(&env, symbol_short!("init_prg"), caller, false);
-            panic!("Program ID cannot be empty");
-        }
-
         // Check if program already exists
-        let program_key = DataKey::Program(program_id.clone());
-        if env.storage().instance().has(&program_key) {
-            monitoring::track_operation(&env, symbol_short!("init_prg"), caller, false);
-            panic!("Program already exists");
+        if env.storage().instance().has(&PROGRAM_DATA) {
+            panic!("Program already initialized");
         }
 
-        // Create program data
         let program_data = ProgramData {
             program_id: program_id.clone(),
             total_funds: 0,
@@ -1033,50 +157,21 @@ impl ProgramEscrowContract {
             token_address: token_address.clone(),
         };
 
-        // Initialize fee config with zero fees (disabled by default)
-        let fee_config = FeeConfig {
-            lock_fee_rate: 0,
-            payout_fee_rate: 0,
-            fee_recipient: authorized_payout_key.clone(),
-            fee_enabled: false,
-        };
-        env.storage().instance().set(&FEE_CONFIG, &fee_config);
-
         // Store program data
-        env.storage().instance().set(&program_key, &program_data);
-
-        // Initialize multisig config (disabled by default)
-        let multisig_config = MultisigConfig {
-            threshold_amount: i128::MAX,
-            signers: vec![&env],
-            required_signatures: 0,
-        };
-        env.storage().persistent().set(
-            &DataKey::MultisigConfig(program_id.clone()),
-            &multisig_config,
-        );
-
-        // Update registry
-        let mut registry: Vec<String> = env
-            .storage()
+        env.storage().instance().set(&PROGRAM_DATA, &program_data);
+        env.storage()
             .instance()
-            .get(&PROGRAM_REGISTRY)
-            .unwrap_or(vec![&env]);
-        registry.push_back(program_id.clone());
-        env.storage().instance().set(&PROGRAM_REGISTRY, &registry);
+            .set(&SCHEDULES, &Vec::<ProgramReleaseSchedule>::new(&env));
+        env.storage()
+            .instance()
+            .set(&RELEASE_HISTORY, &Vec::<ProgramReleaseHistory>::new(&env));
+        env.storage().instance().set(&NEXT_SCHEDULE_ID, &1_u64);
 
-        // Emit registration event
+        // Emit ProgramInitialized event
         env.events().publish(
-            (PROGRAM_REGISTERED,),
+            (PROGRAM_INITIALIZED,),
             (program_id, authorized_payout_key, token_address, 0i128),
         );
-
-        // Track successful operation
-        monitoring::track_operation(&env, symbol_short!("init_prg"), caller, true);
-
-        // Track performance
-        let duration = env.ledger().timestamp().saturating_sub(start);
-        monitoring::emit_performance(&env, symbol_short!("init_prg"), duration);
 
         program_data
     }
@@ -1194,322 +289,72 @@ impl ProgramEscrowContract {
 
     /// Lock initial funds into the program escrow
     ///
-    /// Lists all registered program IDs in the contract.
-    ///
-    /// # Returns
-    /// * `Vec<String>` - List of all program IDs
-    ///
-    /// # Example
-    /// ```rust
-    /// let programs = escrow_client.list_programs();
-    /// for program_id in programs.iter() {
-    ///     println!("Program: {}", program_id);
-    /// }
-    /// ```
-    pub fn list_programs(env: Env) -> Vec<String> {
-        env.storage()
-            .instance()
-            .get(&PROGRAM_REGISTRY)
-            .unwrap_or(vec![&env])
-    }
-
-    /// Checks if a program exists.
-    ///
     /// # Arguments
-    /// * `program_id` - The program ID to check
+    /// * `amount` - Amount of funds to lock (in native token units)
     ///
     /// # Returns
-    /// * `bool` - True if program exists, false otherwise
-    pub fn program_exists(env: Env, program_id: String) -> bool {
-        let program_key = DataKey::Program(program_id);
-        env.storage().instance().has(&program_key)
-    }
-
-    // ========================================================================
-    // Fund Management
-    // ========================================================================
-
-    /// Locks funds into the program escrow for prize distribution.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `amount` - Amount of tokens to lock (in token's smallest denomination)
-    ///
-    /// # Returns
-    /// * `ProgramData` - Updated program data with new balance
-    ///
-    /// # Panics
-    /// * If amount is zero or negative
-    /// * If program is not initialized
-    ///
-    /// # State Changes
-    /// - Increases `total_funds` by amount
-    /// - Increases `remaining_balance` by amount
-    /// - Emits FundsLocked event
-    ///
-    /// # Prerequisites
-    /// Before calling this function:
-    /// 1. Caller must have sufficient token balance
-    /// 2. Caller must approve contract for token transfer
-    /// 3. Tokens must actually be transferred to contract
-    ///
-    /// # Security Considerations
-    /// - Amount must be positive
-    /// - This function doesn't perform the actual token transfer
-    /// - Caller is responsible for transferring tokens to contract
-    /// - Consider verifying contract balance matches recorded amount
-    /// - Multiple lock operations are additive (cumulative)
-    ///
-    /// # Events
-    /// Emits: `FundsLocked(program_id, amount, new_remaining_balance)`
-    ///
-    /// # Example
-    /// ```rust
-    /// use soroban_sdk::token;
-    ///
-    /// // 1. Transfer tokens to contract
-    /// let amount = 10_000_0000000; // 10,000 USDC
-    /// token_client.transfer(
-    ///     &organizer,
-    ///     &contract_address,
-    ///     &amount
-    /// );
-    ///
-    /// // 2. Record the locked funds
-    /// let updated = escrow_client.lock_program_funds(&amount);
-    /// println!("Locked: {} USDC", amount / 10_000_000);
-    /// println!("Remaining: {}", updated.remaining_balance);
-    /// ```
-    ///
-    /// # Production Usage
-    /// ```bash
-    /// # 1. Transfer USDC to contract
-    /// stellar contract invoke \
-    ///   --id USDC_TOKEN_ID \
-    ///   --source ORGANIZER_KEY \
-    ///   -- transfer \
-    ///   --from ORGANIZER_ADDRESS \
-    ///   --to CONTRACT_ADDRESS \
-    ///   --amount 10000000000
-    ///
-    /// # 2. Record locked funds
-    /// stellar contract invoke \
-    ///   --id CONTRACT_ID \
-    ///   --source ORGANIZER_KEY \
-    ///   -- lock_program_funds \
-    ///   --amount 10000000000
-    /// ```
-    ///
-    /// # Gas Cost
-    /// Low - Storage update + event emission
-    ///
-    /// # Common Pitfalls
-    /// - Forgetting to transfer tokens before calling
-    /// -  Locking amount that exceeds actual contract balance
-    /// -  Not verifying contract received the tokens
-
-    pub fn lock_program_funds(env: Env, program_id: String, amount: i128) -> ProgramData {
-        // Apply rate limiting
-        anti_abuse::check_rate_limit(&env, env.current_contract_address());
-
-        let _start = env.ledger().timestamp();
-        let caller = env.current_contract_address();
-
-        // Validate amount
+    /// Updated ProgramData with locked funds
+    pub fn lock_program_funds(env: Env, amount: i128) -> ProgramData {
         if amount <= 0 {
-            monitoring::track_operation(&env, symbol_short!("lock"), caller.clone(), false);
             panic!("Amount must be greater than zero");
         }
 
-        // Get program data
-        let program_key = DataKey::Program(program_id.clone());
         let mut program_data: ProgramData = env
             .storage()
             .instance()
-            .get(&program_key)
-            .unwrap_or_else(|| {
-                monitoring::track_operation(&env, symbol_short!("lock"), caller.clone(), false);
-                panic!("Program not found")
-            });
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"));
 
-        // Calculate and collect fee if enabled
-        let fee_config = Self::get_fee_config_internal(&env);
-        let fee_amount = if fee_config.fee_enabled && fee_config.lock_fee_rate > 0 {
-            Self::calculate_fee(amount, fee_config.lock_fee_rate)
-        } else {
-            0
-        };
-        let net_amount = amount - fee_amount;
-
-        // Update balances with net amount
-        program_data.total_funds += net_amount;
-        program_data.remaining_balance += net_amount;
-
-        // Emit fee collected event if applicable
-        if fee_amount > 0 {
-            env.events().publish(
-                (symbol_short!("fee"),),
-                (
-                    symbol_short!("lock"),
-                    fee_amount,
-                    fee_config.lock_fee_rate,
-                    fee_config.fee_recipient.clone(),
-                ),
-            );
-        }
+        // Update balances
+        program_data.total_funds += amount;
+        program_data.remaining_balance += amount;
 
         // Store updated data
-        env.storage().instance().set(&program_key, &program_data);
+        env.storage().instance().set(&PROGRAM_DATA, &program_data);
 
-        // Emit FundsLocked event (with net amount after fee)
+        // Emit FundsLocked event
         env.events().publish(
             (FUNDS_LOCKED,),
             (
                 program_data.program_id.clone(),
-                net_amount,
+                amount,
                 program_data.remaining_balance,
             ),
         );
 
-        // Note: Caller is responsible for transferring actual tokens to the contract
-        // before calling this function. This function only records the locked amount
-        // in the program state. Use token_client.transfer() to move tokens separately.
-
         program_data
     }
 
-    // ========================================================================
-    // Payout Functions
-    // ========================================================================
-
-    /// Executes batch payouts to multiple recipients simultaneously.
+    /// Execute batch payouts to multiple recipients
     ///
     /// # Arguments
-    /// * `env` - The contract environment
     /// * `recipients` - Vector of recipient addresses
     /// * `amounts` - Vector of amounts (must match recipients length)
     ///
     /// # Returns
-    /// * `ProgramData` - Updated program data after payouts
-    ///
-    /// # Panics
-    /// * If caller is not the authorized payout key
-    /// * If program is not initialized
-    /// * If recipients and amounts vectors have different lengths
-    /// * If vectors are empty
-    /// * If any amount is zero or negative
-    /// * If total payout exceeds remaining balance
-    /// * If arithmetic overflow occurs
-    ///
-    /// # Authorization
-    /// - **CRITICAL**: Only authorized payout key can call
-    /// - Caller must be exact match to `authorized_payout_key`
-    ///
-    /// # State Changes
-    /// - Transfers tokens from contract to each recipient
-    /// - Adds PayoutRecord for each transfer to history
-    /// - Decreases `remaining_balance` by total payout amount
-    /// - Emits BatchPayout event
-    ///
-    /// # Atomicity
-    /// This operation is atomic - either all transfers succeed or all fail.
-    /// If any transfer fails, the entire batch is reverted.
-    ///
-    /// # Security Considerations
-    /// - Verify recipient addresses off-chain before calling
-    /// - Ensure amounts match winner rankings/criteria
-    /// - Total payout is calculated with overflow protection
-    /// - Balance check prevents overdraft
-    /// - All transfers are logged for audit trail
-    /// - Consider implementing payout limits for additional safety
-    ///
-    /// # Events
-    /// Emits: `BatchPayout(program_id, recipient_count, total_amount, new_balance)`
-    ///
-    /// # Example
-    /// ```rust
-    /// use soroban_sdk::{vec, Address};
-    ///
-    /// // Define winners and prizes
-    /// let winners = vec![
-    ///     &env,
-    ///     Address::from_string("GWINNER1..."), // 1st place
-    ///     Address::from_string("GWINNER2..."), // 2nd place
-    ///     Address::from_string("GWINNER3..."), // 3rd place
-    /// ];
-    ///
-    /// let prizes = vec![
-    ///     &env,
-    ///     5_000_0000000,  // $5,000 USDC
-    ///     3_000_0000000,  // $3,000 USDC
-    ///     2_000_0000000,  // $2,000 USDC
-    /// ];
-    ///
-    /// // Execute batch payout (only authorized backend can call)
-    /// let result = escrow_client.batch_payout(&winners, &prizes);
-    /// println!("Paid {} winners", winners.len());
-    /// println!("Remaining: {}", result.remaining_balance);
-    /// ```
-    ///
-    /// # Production Usage
-    /// ```bash
-    /// # Batch payout to 3 winners
-    /// stellar contract invoke \
-    ///   --id CONTRACT_ID \
-    ///   --source BACKEND_KEY \
-    ///   -- batch_payout \
-    ///   --recipients '["GWINNER1...", "GWINNER2...", "GWINNER3..."]' \
-    ///   --amounts '[5000000000, 3000000000, 2000000000]'
-    /// ```
-    ///
-    /// # Gas Cost
-    /// High - Multiple token transfers + storage updates
-    /// Cost scales linearly with number of recipients
-    ///
-    /// # Best Practices
-    /// 1. Verify all winner addresses before execution
-    /// 2. Double-check prize amounts match criteria
-    /// 3. Test on testnet with same number of recipients
-    /// 4. Monitor events for successful completion
-    /// 5. Keep batch size reasonable (recommend < 50 recipients)
-    ///
-    /// # Limitations
-    /// - Maximum batch size limited by gas/resource limits
-    /// - For very large batches, consider multiple calls
-    /// - All amounts must be positive  
-    pub fn batch_payout(
-        env: Env,
-        program_id: String,
-        recipients: Vec<Address>,
-        amounts: Vec<i128>,
-    ) -> ProgramData {
-        // Apply rate limiting to the contract itself or the program
-        // We can't easily get the caller here without getting program data first
-
-        // Get program data
-        let program_key = DataKey::Program(program_id.clone());
+    /// Updated ProgramData after payouts
+    pub fn batch_payout(env: Env, recipients: Vec<Address>, amounts: Vec<i128>) -> ProgramData {
+        // Verify authorization
         let program_data: ProgramData = env
             .storage()
             .instance()
-            .get(&program_key)
-            .unwrap_or_else(|| panic!("Program not found"));
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"));
 
-        // Apply rate limiting to the authorized payout key
-        anti_abuse::check_rate_limit(&env, program_data.authorized_payout_key.clone());
+        program_data.authorized_payout_key.require_auth();
 
-        // Validate inputs
+        // Validate input lengths match
         if recipients.len() != amounts.len() {
             panic!("Recipients and amounts vectors must have the same length");
         }
 
-        if recipients.is_empty() {
+        if recipients.len() == 0 {
             panic!("Cannot process empty batch");
         }
 
-        // Calculate total with overflow protection
+        // Calculate total payout amount
         let mut total_payout: i128 = 0;
-        for i in 0..amounts.len() {
-            let amount = amounts.get(i).unwrap();
+        for amount in amounts.iter() {
             if amount <= 0 {
                 panic!("All amounts must be greater than zero");
             }
@@ -1518,50 +363,10 @@ impl ProgramEscrowContract {
                 .unwrap_or_else(|| panic!("Payout amount overflow"));
         }
 
-        // Validate balance
+        // Validate sufficient balance
         if total_payout > program_data.remaining_balance {
-            panic!(
-                "Insufficient balance: requested {}, available {}",
-                total_payout, program_data.remaining_balance
-            );
+            panic!("Insufficient balance");
         }
-
-        // Check if multisig approval is required for any payout
-        let multisig_config: MultisigConfig =
-            Self::get_multisig_config(env.clone(), program_id.clone());
-        let mut requires_multisig = false;
-
-        for i in 0..amounts.len() {
-            let amount = amounts.get(i).unwrap();
-            if amount >= multisig_config.threshold_amount && multisig_config.required_signatures > 0
-            {
-                requires_multisig = true;
-
-                // Verify approval for this recipient
-                let recipient = recipients.get(i).unwrap();
-                let approval_key = DataKey::PayoutApproval(program_id.clone(), recipient.clone());
-
-                if !env.storage().persistent().has(&approval_key) {
-                    panic!("Multisig approval required for large payout");
-                }
-
-                let approval: PayoutApproval =
-                    env.storage().persistent().get(&approval_key).unwrap();
-
-                if approval.approvals.len() < multisig_config.required_signatures {
-                    panic!("Insufficient approvals for large payout");
-                }
-            }
-        }
-
-        // Require auth from authorized key if no multisig needed
-        if !requires_multisig {
-            program_data.authorized_payout_key.require_auth();
-        }
-
-        // Calculate fees if enabled
-        let fee_config = Self::get_fee_config_internal(&env);
-        let mut total_fees: i128 = 0;
 
         // Execute transfers
         let mut updated_history = program_data.payout_history.clone();
@@ -1573,66 +378,32 @@ impl ProgramEscrowContract {
             let recipient = recipients.get(i).unwrap();
             let amount = amounts.get(i).unwrap();
 
-            // Clear approval if it was used
-            if amount >= multisig_config.threshold_amount && multisig_config.required_signatures > 0
-            {
-                let approval_key = DataKey::PayoutApproval(program_id.clone(), recipient.clone());
-                env.storage().persistent().remove(&approval_key);
-            }
+            // Transfer funds from contract to recipient
+            token_client.transfer(&contract_address, &recipient, &amount);
 
-            // Calculate fee for this payout
-            let fee_amount = if fee_config.fee_enabled && fee_config.payout_fee_rate > 0 {
-                Self::calculate_fee(amount, fee_config.payout_fee_rate)
-            } else {
-                0
-            };
-            let net_amount = amount - fee_amount;
-            total_fees += fee_amount;
-
-            // Transfer net amount to recipient
-            token_client.transfer(&contract_address, &recipient.clone(), &net_amount);
-
-            // Transfer fee to fee recipient if applicable
-            if fee_amount > 0 {
-                token_client.transfer(&contract_address, &fee_config.fee_recipient, &fee_amount);
-            }
-
-            // Record payout (with net amount)
+            // Record payout
             let payout_record = PayoutRecord {
-                recipient: recipient.clone(),
-                amount: net_amount,
+                recipient,
+                amount,
                 timestamp,
             };
             updated_history.push_back(payout_record);
         }
 
-        // Emit fee collected event if applicable
-        if total_fees > 0 {
-            env.events().publish(
-                (symbol_short!("fee"),),
-                (
-                    symbol_short!("payout"),
-                    total_fees,
-                    fee_config.payout_fee_rate,
-                    fee_config.fee_recipient.clone(),
-                ),
-            );
-        }
-
         // Update program data
         let mut updated_data = program_data.clone();
-        updated_data.remaining_balance -= total_payout; // Total includes fees
+        updated_data.remaining_balance -= total_payout;
         updated_data.payout_history = updated_history;
 
         // Store updated data
-        env.storage().instance().set(&program_key, &updated_data);
+        env.storage().instance().set(&PROGRAM_DATA, &updated_data);
 
-        // Emit event
+        // Emit BatchPayout event
         env.events().publish(
             (BATCH_PAYOUT,),
             (
-                program_id,
-                recipients.len(),
+                updated_data.program_id.clone(),
+                recipients.len() as u32,
                 total_payout,
                 updated_data.remaining_balance,
             ),
@@ -1641,148 +412,44 @@ impl ProgramEscrowContract {
         updated_data
     }
 
-    /// Executes a single payout to one recipient.
+    /// Execute a single payout to one recipient
     ///
     /// # Arguments
-    /// * `env` - The contract environment
-    /// * `recipient` - Address of the prize recipient
-    /// * `amount` - Amount to transfer (in token's smallest denomination)
+    /// * `recipient` - Address of the recipient
+    /// * `amount` - Amount to transfer
     ///
     /// # Returns
-    /// * `ProgramData` - Updated program data after payout
-    ///
-    /// # Panics
-    /// * If caller is not the authorized payout key
-    /// * If program is not initialized
-    /// * If amount is zero or negative
-    /// * If amount exceeds remaining balance
-    ///
-    /// # Authorization
-    /// - Only authorized payout key can call this function
-    ///
-    /// # State Changes
-    /// - Transfers tokens from contract to recipient
-    /// - Adds PayoutRecord to history
-    /// - Decreases `remaining_balance` by amount
-    /// - Emits Payout event
-    ///
-    /// # Security Considerations
-    /// - Verify recipient address before calling
-    /// - Amount must be positive
-    /// - Balance check prevents overdraft
-    /// - Transfer is logged in payout history
-    ///
-    /// # Events
-    /// Emits: `Payout(program_id, recipient, amount, new_balance)`
-    ///
-    /// # Example
-    /// ```rust
-    /// use soroban_sdk::Address;
-    ///
-    /// let winner = Address::from_string("GWINNER...");
-    /// let prize = 1_000_0000000; // $1,000 USDC
-    ///
-    /// // Execute single payout
-    /// let result = escrow_client.single_payout(&winner, &prize);
-    /// println!("Paid {} to winner", prize);
-    /// ```
-    ///
-    /// # Gas Cost
-    /// Medium - Single token transfer + storage update
-    ///
-    /// # Use Cases
-    /// - Individual prize awards
-    /// - Bonus payments
-    /// - Late additions to prize pool distribution
-    pub fn single_payout(
-        env: Env,
-        program_id: String,
-        recipient: Address,
-        amount: i128,
-    ) -> ProgramData {
-        // Get program data
-        let program_key = DataKey::Program(program_id.clone());
+    /// Updated ProgramData after payout
+    pub fn single_payout(env: Env, recipient: Address, amount: i128) -> ProgramData {
+        // Verify authorization
         let program_data: ProgramData = env
             .storage()
             .instance()
-            .get(&program_key)
-            .unwrap_or_else(|| panic!("Program not found"));
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"));
 
-        // Apply rate limiting to the authorized payout key
-        anti_abuse::check_rate_limit(&env, program_data.authorized_payout_key.clone());
+        program_data.authorized_payout_key.require_auth();
 
         // Validate amount
         if amount <= 0 {
             panic!("Amount must be greater than zero");
         }
 
-        // Validate balance
+        // Validate sufficient balance
         if amount > program_data.remaining_balance {
-            panic!(
-                "Insufficient balance: requested {}, available {}",
-                amount, program_data.remaining_balance
-            );
+            panic!("Insufficient balance");
         }
 
-        // Check if multisig approval is required
-        let multisig_config: MultisigConfig =
-            Self::get_multisig_config(env.clone(), program_id.clone());
-
-        if amount >= multisig_config.threshold_amount && multisig_config.required_signatures > 0 {
-            // Large payout - requires multisig approval
-            let approval_key = DataKey::PayoutApproval(program_id.clone(), recipient.clone());
-
-            if !env.storage().persistent().has(&approval_key) {
-                panic!("Multisig approval required for large payout");
-            }
-
-            let approval: PayoutApproval = env.storage().persistent().get(&approval_key).unwrap();
-
-            if approval.approvals.len() < multisig_config.required_signatures {
-                panic!("Insufficient approvals for large payout");
-            }
-
-            // Clear approval after use
-            env.storage().persistent().remove(&approval_key);
-        } else {
-            // Small payout - single authorized key approval
-            program_data.authorized_payout_key.require_auth();
-        }
-
-        // Calculate and collect fee if enabled
-        let fee_config = Self::get_fee_config_internal(&env);
-        let fee_amount = if fee_config.fee_enabled && fee_config.payout_fee_rate > 0 {
-            Self::calculate_fee(amount, fee_config.payout_fee_rate)
-        } else {
-            0
-        };
-        let net_amount = amount - fee_amount;
-
-        // Transfer net amount to recipient
-        // Transfer tokens
+        // Transfer funds from contract to recipient
         let contract_address = env.current_contract_address();
         let token_client = token::Client::new(&env, &program_data.token_address);
-        token_client.transfer(&contract_address, &recipient, &net_amount);
+        token_client.transfer(&contract_address, &recipient, &amount);
 
-        // Transfer fee to fee recipient if applicable
-        if fee_amount > 0 {
-            token_client.transfer(&contract_address, &fee_config.fee_recipient, &fee_amount);
-            env.events().publish(
-                (symbol_short!("fee"),),
-                (
-                    symbol_short!("payout"),
-                    fee_amount,
-                    fee_config.payout_fee_rate,
-                    fee_config.fee_recipient.clone(),
-                ),
-            );
-        }
-
-        // Record payout (with net amount after fee)
+        // Record payout
         let timestamp = env.ledger().timestamp();
         let payout_record = PayoutRecord {
             recipient: recipient.clone(),
-            amount: net_amount,
+            amount,
             timestamp,
         };
 
@@ -1791,20 +458,19 @@ impl ProgramEscrowContract {
 
         // Update program data
         let mut updated_data = program_data.clone();
-        updated_data.remaining_balance -= amount; // Total amount (includes fee)
+        updated_data.remaining_balance -= amount;
         updated_data.payout_history = updated_history;
 
         // Store updated data
-        env.storage().instance().set(&program_key, &updated_data);
+        env.storage().instance().set(&PROGRAM_DATA, &updated_data);
 
-        // Emit Payout event (with net amount after fee)
-        // Emit event
+        // Emit Payout event
         env.events().publish(
             (PAYOUT,),
             (
-                program_id,
+                updated_data.program_id.clone(),
                 recipient,
-                net_amount,
+                amount,
                 updated_data.remaining_balance,
             ),
         );
@@ -1812,1098 +478,482 @@ impl ProgramEscrowContract {
         updated_data
     }
 
-    // ========================================================================
-    // Release Schedule Functions
-    // ========================================================================
-
-    /// Creates a time-based release schedule for a program.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `program_id` - The program to create schedule for
-    /// * `amount` - Amount to release (in token's smallest denomination)
-    /// * `release_timestamp` - Unix timestamp when funds become available
-    /// * `recipient` - Address that will receive the funds
+    /// Get program information
     ///
     /// # Returns
-    /// * `ProgramData` - Updated program data
-    ///
-    /// # Panics
-    /// * If program is not initialized
-    /// * If caller is not authorized payout key
-    /// * If amount is invalid
-    /// * If timestamp is in the past
-    /// * If amount exceeds remaining balance
-    ///
-    /// # State Changes
-    /// - Creates ProgramReleaseSchedule record
-    /// - Updates next schedule ID
-    /// - Emits ScheduleCreated event
-    ///
-    /// # Authorization
-    /// - Only authorized payout key can call this function
-    ///
-    /// # Example
-    /// ```rust
-    /// let now = env.ledger().timestamp();
-    /// let release_time = now + (30 * 24 * 60 * 60); // 30 days from now
-    /// escrow_client.create_program_release_schedule(
-    ///     &"Hackathon2024",
-    ///     &500_0000000, // 500 tokens
-    ///     &release_time,
-    ///     &winner_address
-    /// );
-    /// ```
-    pub fn create_program_release_schedule(
-        env: Env,
-        program_id: String,
-        amount: i128,
-        release_timestamp: u64,
-        recipient: Address,
-    ) -> ProgramData {
-        let start = env.ledger().timestamp();
-
-        // Get program data
-        let program_key = DataKey::Program(program_id.clone());
-        let program_data: ProgramData = env
-            .storage()
-            .instance()
-            .get(&program_key)
-            .unwrap_or_else(|| panic!("Program not found"));
-
-        // Apply rate limiting to the authorized payout key
-        anti_abuse::check_rate_limit(&env, program_data.authorized_payout_key.clone());
-
-        // Verify authorization
-        program_data.authorized_payout_key.require_auth();
-
-        // Validate amount
-        if amount <= 0 {
-            panic!("Amount must be greater than zero");
-        }
-
-        // Validate timestamp
-        if release_timestamp <= env.ledger().timestamp() {
-            panic!("Release timestamp must be in the future");
-        }
-
-        // Check sufficient remaining balance
-        let scheduled_total = get_program_total_scheduled_amount(&env, &program_id);
-        if scheduled_total + amount > program_data.remaining_balance {
-            panic!("Insufficient balance for scheduled amount");
-        }
-
-        // Get next schedule ID
-        let schedule_id: u64 = env
-            .storage()
-            .persistent()
-            .get(&DataKey::NextScheduleId(program_id.clone()))
-            .unwrap_or(1);
-
-        // Create release schedule
-        let schedule = ProgramReleaseSchedule {
-            schedule_id,
-            amount,
-            release_timestamp,
-            recipient: recipient.clone(),
-            released: false,
-            released_at: None,
-            released_by: None,
-        };
-
-        // Store schedule
-        env.storage().persistent().set(
-            &DataKey::ReleaseSchedule(program_id.clone(), schedule_id),
-            &schedule,
-        );
-
-        // Update next schedule ID
-        env.storage().persistent().set(
-            &DataKey::NextScheduleId(program_id.clone()),
-            &(schedule_id + 1),
-        );
-
-        // Emit program schedule created event
-        env.events().publish(
-            (PROG_SCHEDULE_CREATED,),
-            ProgramScheduleCreated {
-                program_id: program_id.clone(),
-                schedule_id,
-                amount,
-                release_timestamp,
-                recipient: recipient.clone(),
-                created_by: program_data.authorized_payout_key.clone(),
-            },
-        );
-
-        // Track successful operation
-        monitoring::track_operation(
-            &env,
-            symbol_short!("create_p"),
-            program_data.authorized_payout_key,
-            true,
-        );
-
-        // Track performance
-        let duration = env.ledger().timestamp().saturating_sub(start);
-        monitoring::emit_performance(&env, symbol_short!("create_p"), duration);
-
-        // Return updated program data
-        let updated_data: ProgramData = env
-            .storage()
-            .instance()
-            .get(&program_key)
-            .expect("Program data missing after schedule creation");
-        updated_data
-    }
-
-    /// Automatically releases funds for program schedules that are due.
-    /// Can be called by anyone after the release timestamp has passed.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `program_id` - The program to check for due schedules
-    /// * `schedule_id` - The specific schedule to release
-    ///
-    /// # Panics
-    /// * If program doesn't exist
-    /// * If schedule doesn't exist
-    /// * If schedule is already released
-    /// * If schedule is not yet due
-    ///
-    /// # State Changes
-    /// - Transfers tokens to recipient
-    /// - Updates schedule status to released
-    /// - Adds to release history
-    /// - Updates program remaining balance
-    /// - Emits ScheduleReleased event
-    ///
-    /// # Example
-    /// ```rust
-    /// // Anyone can call this after the timestamp
-    /// escrow_client.release_program_schedule_automatic(&"Hackathon2024", &1);
-    /// ```
-    pub fn release_prog_schedule_automatic(env: Env, program_id: String, schedule_id: u64) {
-        let start = env.ledger().timestamp();
-        let caller = env.current_contract_address();
-
-        // Get program data
-        let program_key = DataKey::Program(program_id.clone());
-        let program_data: ProgramData = env
-            .storage()
-            .instance()
-            .get(&program_key)
-            .unwrap_or_else(|| panic!("Program not found"));
-
-        // Get schedule
-        if !env
-            .storage()
-            .persistent()
-            .has(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id))
-        {
-            panic!("Schedule not found");
-        }
-
-        let mut schedule: ProgramReleaseSchedule = env
-            .storage()
-            .persistent()
-            .get(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id))
-            .unwrap();
-
-        // Check if already released
-        if schedule.released {
-            panic!("Schedule already released");
-        }
-
-        // Check if due for release
-        let now = env.ledger().timestamp();
-        if now < schedule.release_timestamp {
-            panic!("Schedule not yet due for release");
-        }
-
-        // Get token client
-        let contract_address = env.current_contract_address();
-        let token_client = token::Client::new(&env, &program_data.token_address);
-
-        // Transfer funds
-        token_client.transfer(&contract_address, &schedule.recipient, &schedule.amount);
-
-        // Update schedule
-        schedule.released = true;
-        schedule.released_at = Some(now);
-        schedule.released_by = Some(env.current_contract_address());
-
-        // Update program data
-        let mut updated_data = program_data.clone();
-        updated_data.remaining_balance -= schedule.amount;
-
-        // Add to release history
-        let history_entry = ProgramReleaseHistory {
-            schedule_id,
-            program_id: program_id.clone(),
-            amount: schedule.amount,
-            recipient: schedule.recipient.clone(),
-            released_at: now,
-            released_by: env.current_contract_address(),
-            release_type: ReleaseType::Automatic,
-        };
-
-        let mut history: Vec<ProgramReleaseHistory> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::ReleaseHistory(program_id.clone()))
-            .unwrap_or(vec![&env]);
-        history.push_back(history_entry);
-
-        // Store updates
-        env.storage().persistent().set(
-            &DataKey::ReleaseSchedule(program_id.clone(), schedule_id),
-            &schedule,
-        );
-        env.storage().instance().set(&program_key, &updated_data);
-        env.storage()
-            .persistent()
-            .set(&DataKey::ReleaseHistory(program_id.clone()), &history);
-
-        // Emit program schedule released event
-        env.events().publish(
-            (PROG_SCHEDULE_RELEASED,),
-            ProgramScheduleReleased {
-                program_id: program_id.clone(),
-                schedule_id,
-                amount: schedule.amount,
-                recipient: schedule.recipient.clone(),
-                released_at: now,
-                released_by: env.current_contract_address(),
-                release_type: ReleaseType::Automatic,
-            },
-        );
-
-        // Track successful operation
-        monitoring::track_operation(&env, symbol_short!("rel_auto"), caller, true);
-
-        // Track performance
-        let duration = env.ledger().timestamp().saturating_sub(start);
-        monitoring::emit_performance(&env, symbol_short!("rel_auto"), duration);
-    }
-
-    /// Manually releases funds for a program schedule (authorized payout key only).
-    /// Can be called before the release timestamp by authorized key.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `program_id` - The program containing the schedule
-    /// * `schedule_id` - The schedule to release
-    ///
-    /// # Panics
-    /// * If program doesn't exist
-    /// * If caller is not authorized payout key
-    /// * If schedule doesn't exist
-    /// * If schedule is already released
-    ///
-    /// # State Changes
-    /// - Transfers tokens to recipient
-    /// - Updates schedule status to released
-    /// - Adds to release history
-    /// - Updates program remaining balance
-    /// - Emits ScheduleReleased event
-    ///
-    /// # Authorization
-    /// - Only authorized payout key can call this function
-    ///
-    /// # Example
-    /// ```rust
-    /// // Authorized key can release early
-    /// escrow_client.release_program_schedule_manual(&"Hackathon2024", &1);
-    /// ```
-    pub fn release_program_schedule_manual(env: Env, program_id: String, schedule_id: u64) {
-        let start = env.ledger().timestamp();
-
-        // Get program data
-        let program_key = DataKey::Program(program_id.clone());
-        let program_data: ProgramData = env
-            .storage()
-            .instance()
-            .get(&program_key)
-            .unwrap_or_else(|| panic!("Program not found"));
-
-        // Apply rate limiting to the authorized payout key
-        anti_abuse::check_rate_limit(&env, program_data.authorized_payout_key.clone());
-
-        // Verify authorization
-        program_data.authorized_payout_key.require_auth();
-
-        // Get schedule
-        if !env
-            .storage()
-            .persistent()
-            .has(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id))
-        {
-            panic!("Schedule not found");
-        }
-
-        let mut schedule: ProgramReleaseSchedule = env
-            .storage()
-            .persistent()
-            .get(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id))
-            .unwrap();
-
-        // Check if already released
-        if schedule.released {
-            panic!("Schedule already released");
-        }
-
-        // Get token client
-        let contract_address = env.current_contract_address();
-        let token_client = token::Client::new(&env, &program_data.token_address);
-
-        // Transfer funds
-        token_client.transfer(&contract_address, &schedule.recipient, &schedule.amount);
-
-        // Update schedule
-        let now = env.ledger().timestamp();
-        schedule.released = true;
-        schedule.released_at = Some(now);
-        schedule.released_by = Some(program_data.authorized_payout_key.clone());
-
-        // Update program data
-        let mut updated_data = program_data.clone();
-        updated_data.remaining_balance -= schedule.amount;
-
-        // Add to release history
-        let history_entry = ProgramReleaseHistory {
-            schedule_id,
-            program_id: program_id.clone(),
-            amount: schedule.amount,
-            recipient: schedule.recipient.clone(),
-            released_at: now,
-            released_by: program_data.authorized_payout_key.clone(),
-            release_type: ReleaseType::Manual,
-        };
-
-        let mut history: Vec<ProgramReleaseHistory> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::ReleaseHistory(program_id.clone()))
-            .unwrap_or(vec![&env]);
-        history.push_back(history_entry);
-
-        // Store updates
-        env.storage().persistent().set(
-            &DataKey::ReleaseSchedule(program_id.clone(), schedule_id),
-            &schedule,
-        );
-        env.storage().instance().set(&program_key, &updated_data);
-        env.storage()
-            .persistent()
-            .set(&DataKey::ReleaseHistory(program_id.clone()), &history);
-
-        // Emit program schedule released event
-        env.events().publish(
-            (PROG_SCHEDULE_RELEASED,),
-            ProgramScheduleReleased {
-                program_id: program_id.clone(),
-                schedule_id,
-                amount: schedule.amount,
-                recipient: schedule.recipient.clone(),
-                released_at: now,
-                released_by: program_data.authorized_payout_key.clone(),
-                release_type: ReleaseType::Manual,
-            },
-        );
-
-        // Track successful operation
-        monitoring::track_operation(
-            &env,
-            symbol_short!("rel_man"),
-            program_data.authorized_payout_key,
-            true,
-        );
-
-        // Track performance
-        let duration = env.ledger().timestamp().saturating_sub(start);
-        monitoring::emit_performance(&env, symbol_short!("rel_man"), duration);
-    }
-
-    /// Set the claim window duration for a program (authorized payout key only).
-    pub fn set_program_claim_window(env: Env, program_id: String, claim_window: u64) {
-        let program_key = DataKey::Program(program_id.clone());
-        let program_data: ProgramData = env
-            .storage()
-            .instance()
-            .get(&program_key)
-            .unwrap_or_else(|| panic!("Program not found"));
-        program_data.authorized_payout_key.require_auth();
+    /// ProgramData containing all program information
+    pub fn get_program_info(env: Env) -> ProgramData {
         env.storage()
             .instance()
-            .set(&DataKey::ClaimWindow, &claim_window);
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"))
     }
 
-    /// Authorize a schedule release as a pending claim (authorized payout key only).
-    /// Beneficiary must call claim_program_schedule() within the window.
-    pub fn authorize_program_schedule_claim(env: Env, program_id: String, schedule_id: u64) {
-        let program_key = DataKey::Program(program_id.clone());
-        let program_data: ProgramData = env
-            .storage()
-            .instance()
-            .get(&program_key)
-            .unwrap_or_else(|| panic!("Program not found"));
-        program_data.authorized_payout_key.require_auth();
-
-        let schedule: ProgramReleaseSchedule = env
-            .storage()
-            .persistent()
-            .get(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id))
-            .unwrap_or_else(|| panic!("Schedule not found"));
-
-        if schedule.released {
-            panic!("Schedule already released");
-        }
-
-        let claim_window: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::ClaimWindow)
-            .unwrap_or(86400);
-        let now = env.ledger().timestamp();
-        let claim = ClaimRecord {
-            bounty_id: schedule_id,
-            recipient: schedule.recipient.clone(),
-            amount: schedule.amount,
-            expires_at: now.saturating_add(claim_window),
-            claimed: false,
-        };
-
-        env.storage().persistent().set(
-            &DataKey::PendingClaim(program_id.clone(), schedule_id),
-            &claim,
-        );
-
-        env.events().publish(
-            (symbol_short!("claim"), symbol_short!("created")),
-            ClaimCreated {
-                bounty_id: schedule_id,
-                recipient: schedule.recipient,
-                amount: schedule.amount,
-                expires_at: claim.expires_at,
-            },
-        );
-    }
-
-    /// Beneficiary claims their authorized schedule funds within the window.
-    pub fn claim_program_schedule(env: Env, program_id: String, schedule_id: u64) {
-        if !env
-            .storage()
-            .persistent()
-            .has(&DataKey::PendingClaim(program_id.clone(), schedule_id))
-        {
-            panic!("No pending claim found");
-        }
-        let mut claim: ClaimRecord = env
-            .storage()
-            .persistent()
-            .get(&DataKey::PendingClaim(program_id.clone(), schedule_id))
-            .unwrap();
-
-        claim.recipient.require_auth();
-
-        let now = env.ledger().timestamp();
-        if now > claim.expires_at {
-            panic!("Claim window expired");
-        }
-        if claim.claimed {
-            panic!("Already claimed");
-        }
-
-        let program_key = DataKey::Program(program_id.clone());
-        let mut program_data: ProgramData = env.storage().instance().get(&program_key).unwrap();
-        let token_client = token::Client::new(&env, &program_data.token_address);
-
-        token_client.transfer(
-            &env.current_contract_address(),
-            &claim.recipient,
-            &claim.amount,
-        );
-
-        // Mark schedule released
-        let mut schedule: ProgramReleaseSchedule = env
-            .storage()
-            .persistent()
-            .get(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id))
-            .unwrap();
-        schedule.released = true;
-        schedule.released_at = Some(now);
-        schedule.released_by = Some(claim.recipient.clone());
-        program_data.remaining_balance -= claim.amount;
-
-        claim.claimed = true;
-        env.storage().persistent().set(
-            &DataKey::PendingClaim(program_id.clone(), schedule_id),
-            &claim,
-        );
-        env.storage().persistent().set(
-            &DataKey::ReleaseSchedule(program_id.clone(), schedule_id),
-            &schedule,
-        );
-        env.storage().instance().set(&program_key, &program_data);
-
-        env.events().publish(
-            (symbol_short!("claim"), symbol_short!("done")),
-            ClaimExecuted {
-                bounty_id: schedule_id,
-                recipient: claim.recipient.clone(),
-                amount: claim.amount,
-                claimed_at: now,
-            },
-        );
-    }
-
-    /// Admin cancels an unclaimed (possibly expired) pending claim.
-    pub fn cancel_program_claim(env: Env, program_id: String, schedule_id: u64) {
-        let program_key = DataKey::Program(program_id.clone());
-        let program_data: ProgramData = env
-            .storage()
-            .instance()
-            .get(&program_key)
-            .unwrap_or_else(|| panic!("Program not found"));
-        program_data.authorized_payout_key.require_auth();
-
-        if !env
-            .storage()
-            .persistent()
-            .has(&DataKey::PendingClaim(program_id.clone(), schedule_id))
-        {
-            panic!("No pending claim found");
-        }
-        let claim: ClaimRecord = env
-            .storage()
-            .persistent()
-            .get(&DataKey::PendingClaim(program_id.clone(), schedule_id))
-            .unwrap();
-
-        if claim.claimed {
-            panic!("Claim already executed");
-        }
-
-        env.storage()
-            .persistent()
-            .remove(&DataKey::PendingClaim(program_id, schedule_id));
-
-        env.events().publish(
-            (symbol_short!("claim"), symbol_short!("cancel")),
-            ClaimCancelled {
-                bounty_id: schedule_id,
-                recipient: claim.recipient,
-                amount: claim.amount,
-                cancelled_at: env.ledger().timestamp(),
-                cancelled_by: program_data.authorized_payout_key,
-            },
-        );
-    }
-
-    /// View: get a pending claim for a program schedule.
-    pub fn get_program_pending_claim(
-        env: Env,
-        program_id: String,
-        schedule_id: u64,
-    ) -> ClaimRecord {
-        env.storage()
-            .persistent()
-            .get(&DataKey::PendingClaim(program_id, schedule_id))
-            .unwrap_or_else(|| panic!("No pending claim found"))
-    }
-
-    // ========================================================================
-    // View Functions (Read-only)
-    // ========================================================================
-
-    /// Retrieves complete program information.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
+    /// Get remaining balance
     ///
     /// # Returns
-    /// * `ProgramData` - Complete program state including:
-    ///   - Program ID
-    ///   - Total funds locked
-    ///   - Remaining balance
-    ///   - Authorized payout key
-    ///   - Complete payout history
-    ///   - Token contract address
-    ///
-    /// # Panics
-    /// * If program is not initialized
-    ///
-    /// # Use Cases
-    /// - Verifying program configuration
-    /// - Checking balances before payouts
-    /// - Auditing payout history
-    /// - Displaying program status in UI
-    ///
-    /// # Example
-    /// ```rust
-    /// let info = escrow_client.get_program_info();
-    /// println!("Program: {}", info.program_id);
-    /// println!("Total Locked: {}", info.total_funds);
-    /// println!("Remaining: {}", info.remaining_balance);
-    /// println!("Payouts Made: {}", info.payout_history.len());
-    /// ```
-    ///
-    /// # Gas Cost
-    /// Very Low - Single storage read
-    pub fn get_program_info(env: Env, program_id: String) -> ProgramData {
-        let program_key = DataKey::Program(program_id);
-        env.storage()
-            .instance()
-            .get(&program_key)
-            .unwrap_or_else(|| panic!("Program not found"))
-    }
-
-    /// Retrieves the remaining balance for a specific program.
-    ///
-    /// # Arguments
-    /// * `program_id` - The program ID to query
-    ///
-    /// # Returns
-    /// * `i128` - Remaining balance
-    ///
-    /// # Panics
-    /// * If program doesn't exist
-    pub fn get_remaining_balance(env: Env, program_id: String) -> i128 {
-        let program_key = DataKey::Program(program_id);
-        let program_data: ProgramData = env
-            .storage()
-            .instance()
-            .get(&program_key)
-            .unwrap_or_else(|| panic!("Program not found"));
-
-        program_data.remaining_balance
-    }
-
-    /// Update fee configuration (admin only - uses authorized_payout_key)
-    ///
-    /// # Arguments
-    /// * `lock_fee_rate` - Optional new lock fee rate (basis points)
-    /// * `payout_fee_rate` - Optional new payout fee rate (basis points)
-    /// * `fee_recipient` - Optional new fee recipient address
-    /// * `fee_enabled` - Optional fee enable/disable flag
-    pub fn update_fee_config(
-        env: Env,
-        lock_fee_rate: Option<i128>,
-        payout_fee_rate: Option<i128>,
-        fee_recipient: Option<Address>,
-        fee_enabled: Option<bool>,
-    ) {
-        // Verify authorization
+    /// Current remaining balance
+    pub fn get_remaining_balance(env: Env) -> i128 {
         let program_data: ProgramData = env
             .storage()
             .instance()
             .get(&PROGRAM_DATA)
             .unwrap_or_else(|| panic!("Program not initialized"));
 
-        // Note: In Soroban, we check authorization by requiring auth from the authorized key
-        // For this function, we'll require auth from the authorized_payout_key
-        program_data.authorized_payout_key.require_auth();
-
-        let mut fee_config = Self::get_fee_config_internal(&env);
-
-        if let Some(rate) = lock_fee_rate {
-            if !(0..=MAX_FEE_RATE).contains(&rate) {
-                panic!(
-                    "Invalid lock fee rate: must be between 0 and {}",
-                    MAX_FEE_RATE
-                );
-            }
-            fee_config.lock_fee_rate = rate;
-        }
-
-        if let Some(rate) = payout_fee_rate {
-            if !(0..=MAX_FEE_RATE).contains(&rate) {
-                panic!(
-                    "Invalid payout fee rate: must be between 0 and {}",
-                    MAX_FEE_RATE
-                );
-            }
-            fee_config.payout_fee_rate = rate;
-        }
-
-        if let Some(recipient) = fee_recipient {
-            fee_config.fee_recipient = recipient;
-        }
-
-        if let Some(enabled) = fee_enabled {
-            fee_config.fee_enabled = enabled;
-        }
-
-        env.storage().instance().set(&FEE_CONFIG, &fee_config);
-
-        // Emit fee config updated event
-        env.events().publish(
-            (symbol_short!("fee_cfg"),),
-            (
-                fee_config.lock_fee_rate,
-                fee_config.payout_fee_rate,
-                fee_config.fee_recipient,
-                fee_config.fee_enabled,
-            ),
-        );
+        program_data.remaining_balance
     }
 
-    /// Get current fee configuration (view function)
-    pub fn get_fee_config(env: Env) -> FeeConfig {
-        Self::get_fee_config_internal(&env)
-    }
-
-    /// Update multisig configuration for a program (authorized payout key only)
-    pub fn update_multisig_config(
+    /// Create a release schedule entry that can be triggered at/after `release_timestamp`.
+    pub fn create_program_release_schedule(
         env: Env,
-        program_id: String,
-        threshold_amount: i128,
-        signers: Vec<Address>,
-        required_signatures: u32,
-    ) {
-        let program_key = DataKey::Program(program_id.clone());
+        recipient: Address,
+        amount: i128,
+        release_timestamp: u64,
+    ) -> ProgramReleaseSchedule {
         let program_data: ProgramData = env
             .storage()
             .instance()
-            .get(&program_key)
-            .unwrap_or_else(|| panic!("Program not found"));
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"));
 
         program_data.authorized_payout_key.require_auth();
 
-        if required_signatures > signers.len() {
-            panic!("Required signatures cannot exceed number of signers");
+        if amount <= 0 {
+            panic!("Amount must be greater than zero");
         }
 
-        let config = MultisigConfig {
-            threshold_amount,
-            signers,
-            required_signatures,
-        };
-
-        env.storage()
-            .persistent()
-            .set(&DataKey::MultisigConfig(program_id), &config);
-    }
-
-    /// Get multisig configuration for a program
-    pub fn get_multisig_config(env: Env, program_id: String) -> MultisigConfig {
-        env.storage()
-            .persistent()
-            .get(&DataKey::MultisigConfig(program_id))
-            .unwrap_or(MultisigConfig {
-                threshold_amount: i128::MAX,
-                signers: vec![&env],
-                required_signatures: 0,
-            })
-    }
-
-    /// Approve large payout (requires multisig)
-    pub fn approve_large_payout(
-        env: Env,
-        program_id: String,
-        recipient: Address,
-        amount: i128,
-        approver: Address,
-    ) {
-        let multisig_config: MultisigConfig =
-            Self::get_multisig_config(env.clone(), program_id.clone());
-
-        let mut is_signer = false;
-        for signer in multisig_config.signers.iter() {
-            if signer == approver {
-                is_signer = true;
-                break;
-            }
-        }
-
-        if !is_signer {
-            panic!("Caller is not an authorized signer");
-        }
-
-        approver.require_auth();
-
-        let approval_key = DataKey::PayoutApproval(program_id.clone(), recipient.clone());
-        let mut approval: PayoutApproval =
-            env.storage()
-                .persistent()
-                .get(&approval_key)
-                .unwrap_or(PayoutApproval {
-                    program_id: program_id.clone(),
-                    recipient: recipient.clone(),
-                    amount,
-                    approvals: vec![&env],
-                });
-
-        for existing in approval.approvals.iter() {
-            if existing == approver {
-                return;
-            }
-        }
-
-        approval.approvals.push_back(approver.clone());
-        env.storage().persistent().set(&approval_key, &approval);
-
-        env.events().publish(
-            (symbol_short!("approval"),),
-            (program_id, recipient, amount, approver),
-        );
-    }
-
-    /// Gets the total number of programs registered.
-    ///
-    /// # Returns
-    /// * `u32` - Count of registered programs
-    pub fn get_program_count(env: Env) -> u32 {
-        let registry: Vec<String> = env
+        let mut schedules: Vec<ProgramReleaseSchedule> = env
             .storage()
             .instance()
-            .get(&PROGRAM_REGISTRY)
-            .unwrap_or(vec![&env]);
-
-        registry.len()
-    }
-
-    // ========================================================================
-    // Monitoring & Analytics Functions
-    // ========================================================================
-
-    /// Health check - returns contract health status
-    pub fn health_check(env: Env) -> monitoring::HealthStatus {
-        monitoring::health_check(&env)
-    }
-
-    /// Get analytics - returns usage analytics
-    pub fn get_analytics(env: Env) -> monitoring::Analytics {
-        monitoring::get_analytics(&env)
-    }
-
-    /// Get state snapshot - returns current state
-    pub fn get_state_snapshot(env: Env) -> monitoring::StateSnapshot {
-        monitoring::get_state_snapshot(&env)
-    }
-
-    /// Get performance stats for a function
-    pub fn get_performance_stats(env: Env, function_name: Symbol) -> monitoring::PerformanceStats {
-        monitoring::get_performance_stats(&env, function_name)
-    }
-
-    // ========================================================================
-    // Anti-Abuse Administrative Functions
-    // ========================================================================
-
-    /// Sets the administrative address for anti-abuse configuration.
-    /// Can only be called once or by the existing admin.
-    pub fn set_admin(env: Env, new_admin: Address) {
-        if let Some(current_admin) = anti_abuse::get_admin(&env) {
-            current_admin.require_auth();
-        }
-        anti_abuse::set_admin(&env, new_admin);
-    }
-
-    /// Updates the rate limit configuration.
-    /// Only the admin can call this.
-    pub fn update_rate_limit_config(
-        env: Env,
-        window_size: u64,
-        max_operations: u32,
-        cooldown_period: u64,
-    ) {
-        let admin = anti_abuse::get_admin(&env).expect("Admin not set");
-        admin.require_auth();
-
-        anti_abuse::set_config(
-            &env,
-            anti_abuse::AntiAbuseConfig {
-                window_size,
-                max_operations,
-                cooldown_period,
-            },
-        );
-    }
-
-    /// Adds or removes an address from the whitelist.
-    /// Only the admin can call this.
-    pub fn set_whitelist(env: Env, address: Address, whitelisted: bool) {
-        let admin = anti_abuse::get_admin(&env).expect("Admin not set");
-        admin.require_auth();
-
-        anti_abuse::set_whitelist(&env, address, whitelisted);
-    }
-
-    /// Checks if an address is whitelisted.
-    pub fn is_whitelisted(env: Env, address: Address) -> bool {
-        anti_abuse::is_whitelisted(&env, address)
-    }
-
-    /// Gets the current rate limit configuration.
-    pub fn get_rate_limit_config(env: Env) -> anti_abuse::AntiAbuseConfig {
-        anti_abuse::get_config(&env)
-    }
-
-    /// Gets the current admin address.
-    pub fn get_admin(env: Env) -> Option<Address> {
-        anti_abuse::get_admin(&env)
-    }
-
-    // ========================================================================
-    // Schedule View Functions
-    // ========================================================================
-
-    /// Retrieves a specific program release schedule.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `program_id` - The program containing the schedule
-    /// * `schedule_id` - The schedule ID to retrieve
-    ///
-    /// # Returns
-    /// * `ProgramReleaseSchedule` - The schedule details
-    ///
-    /// # Panics
-    /// * If schedule doesn't exist
-    pub fn get_program_release_schedule(
-        env: Env,
-        program_id: String,
-        schedule_id: u64,
-    ) -> ProgramReleaseSchedule {
-        env.storage()
-            .persistent()
-            .get(&DataKey::ReleaseSchedule(program_id, schedule_id))
-            .unwrap_or_else(|| panic!("Schedule not found"))
-    }
-
-    /// Retrieves all release schedules for a program.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `program_id` - The program to query
-    ///
-    /// # Returns
-    /// * `Vec<ProgramReleaseSchedule>` - All schedules for the program
-    pub fn get_all_prog_release_schedules(
-        env: Env,
-        program_id: String,
-    ) -> Vec<ProgramReleaseSchedule> {
-        let mut schedules = Vec::new(&env);
-        let next_id: u64 = env
+            .get(&SCHEDULES)
+            .unwrap_or_else(|| Vec::new(&env));
+        let schedule_id: u64 = env
             .storage()
-            .persistent()
-            .get(&DataKey::NextScheduleId(program_id.clone()))
-            .unwrap_or(1);
+            .instance()
+            .get(&NEXT_SCHEDULE_ID)
+            .unwrap_or(1_u64);
 
-        for schedule_id in 1..next_id {
-            if env
-                .storage()
-                .persistent()
-                .has(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id))
-            {
-                let schedule: ProgramReleaseSchedule = env
-                    .storage()
-                    .persistent()
-                    .get(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id))
-                    .unwrap();
-                schedules.push_back(schedule);
-            }
-        }
+        let schedule = ProgramReleaseSchedule {
+            schedule_id,
+            recipient,
+            amount,
+            release_timestamp,
+            released: false,
+        };
+        schedules.push_back(schedule.clone());
 
-        schedules
+        env.storage().instance().set(&SCHEDULES, &schedules);
+        env.storage()
+            .instance()
+            .set(&NEXT_SCHEDULE_ID, &(schedule_id + 1));
+
+        schedule
     }
 
-    /// Retrieves pending (unreleased) schedules for a program.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `program_id` - The program to query
-    ///
-    /// # Returns
-    /// * `Vec<ProgramReleaseSchedule>` - All pending schedules
-    pub fn get_pending_program_schedules(
-        env: Env,
-        program_id: String,
-    ) -> Vec<ProgramReleaseSchedule> {
-        let all_schedules = Self::get_all_prog_release_schedules(env.clone(), program_id.clone());
-        let mut pending = Vec::new(&env);
+    /// Trigger all due schedules where `now >= release_timestamp`.
+    pub fn trigger_program_releases(env: Env) -> u32 {
+        let mut program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"));
+        program_data.authorized_payout_key.require_auth();
 
-        for schedule in all_schedules.iter() {
-            if !schedule.released {
-                pending.push_back(schedule.clone());
-            }
-        }
+        let mut schedules: Vec<ProgramReleaseSchedule> = env
+            .storage()
+            .instance()
+            .get(&SCHEDULES)
+            .unwrap_or_else(|| Vec::new(&env));
+        let mut release_history: Vec<ProgramReleaseHistory> = env
+            .storage()
+            .instance()
+            .get(&RELEASE_HISTORY)
+            .unwrap_or_else(|| Vec::new(&env));
 
-        pending
-    }
-
-    /// Retrieves due schedules (timestamp passed but not released) for a program.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `program_id` - The program to query
-    ///
-    /// # Returns
-    /// * `Vec<ProgramReleaseSchedule>` - All due but unreleased schedules
-    pub fn get_due_program_schedules(env: Env, program_id: String) -> Vec<ProgramReleaseSchedule> {
-        let pending = Self::get_pending_program_schedules(env.clone(), program_id.clone());
-        let mut due = Vec::new(&env);
         let now = env.ledger().timestamp();
+        let contract_address = env.current_contract_address();
+        let token_client = token::Client::new(&env, &program_data.token_address);
+        let mut released_count: u32 = 0;
 
-        for schedule in pending.iter() {
-            if schedule.release_timestamp <= now {
-                due.push_back(schedule.clone());
+        for i in 0..schedules.len() {
+            let mut schedule = schedules.get(i).unwrap();
+            if schedule.released || now < schedule.release_timestamp {
+                continue;
+            }
+
+            if schedule.amount > program_data.remaining_balance {
+                panic!("Insufficient balance");
+            }
+
+            token_client.transfer(&contract_address, &schedule.recipient, &schedule.amount);
+            schedule.released = true;
+            schedules.set(i, schedule.clone());
+
+            program_data.remaining_balance -= schedule.amount;
+            program_data.payout_history.push_back(PayoutRecord {
+                recipient: schedule.recipient.clone(),
+                amount: schedule.amount,
+                timestamp: now,
+            });
+            release_history.push_back(ProgramReleaseHistory {
+                schedule_id: schedule.schedule_id,
+                recipient: schedule.recipient,
+                amount: schedule.amount,
+                released_at: now,
+            });
+            released_count += 1;
+        }
+
+        env.storage().instance().set(&PROGRAM_DATA, &program_data);
+        env.storage().instance().set(&SCHEDULES, &schedules);
+        env.storage()
+            .instance()
+            .set(&RELEASE_HISTORY, &release_history);
+
+        released_count
+    }
+
+    pub fn get_program_release_schedules(env: Env) -> Vec<ProgramReleaseSchedule> {
+        env.storage()
+            .instance()
+            .get(&SCHEDULES)
+            .unwrap_or_else(|| Vec::new(&env))
+    }
+
+    pub fn get_program_release_history(env: Env) -> Vec<ProgramReleaseHistory> {
+        env.storage()
+            .instance()
+            .get(&RELEASE_HISTORY)
+            .unwrap_or_else(|| Vec::new(&env))
+    }
+
+    /// Query payout history by recipient with pagination
+    pub fn query_payouts_by_recipient(
+        env: Env,
+        recipient: Address,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<PayoutRecord> {
+        let program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"));
+        let history = program_data.payout_history;
+        let mut results = Vec::new(&env);
+        let mut count = 0u32;
+        let mut skipped = 0u32;
+
+        for i in 0..history.len() {
+            if count >= limit {
+                break;
+            }
+            let record = history.get(i).unwrap();
+            if record.recipient == recipient {
+                if skipped < offset {
+                    skipped += 1;
+                    continue;
+                }
+                results.push_back(record);
+                count += 1;
+            }
+        }
+        results
+    }
+
+    /// Query payout history by amount range
+    pub fn query_payouts_by_amount(
+        env: Env,
+        min_amount: i128,
+        max_amount: i128,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<PayoutRecord> {
+        let program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"));
+        let history = program_data.payout_history;
+        let mut results = Vec::new(&env);
+        let mut count = 0u32;
+        let mut skipped = 0u32;
+
+        for i in 0..history.len() {
+            if count >= limit {
+                break;
+            }
+            let record = history.get(i).unwrap();
+            if record.amount >= min_amount && record.amount <= max_amount {
+                if skipped < offset {
+                    skipped += 1;
+                    continue;
+                }
+                results.push_back(record);
+                count += 1;
+            }
+        }
+        results
+    }
+
+    /// Query payout history by timestamp range
+    pub fn query_payouts_by_timestamp(
+        env: Env,
+        min_timestamp: u64,
+        max_timestamp: u64,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<PayoutRecord> {
+        let program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"));
+        let history = program_data.payout_history;
+        let mut results = Vec::new(&env);
+        let mut count = 0u32;
+        let mut skipped = 0u32;
+
+        for i in 0..history.len() {
+            if count >= limit {
+                break;
+            }
+            let record = history.get(i).unwrap();
+            if record.timestamp >= min_timestamp && record.timestamp <= max_timestamp {
+                if skipped < offset {
+                    skipped += 1;
+                    continue;
+                }
+                results.push_back(record);
+                count += 1;
+            }
+        }
+        results
+    }
+
+    /// Query release schedules by recipient
+    pub fn query_schedules_by_recipient(
+        env: Env,
+        recipient: Address,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<ProgramReleaseSchedule> {
+        let schedules: Vec<ProgramReleaseSchedule> = env
+            .storage()
+            .instance()
+            .get(&SCHEDULES)
+            .unwrap_or_else(|| Vec::new(&env));
+        let mut results = Vec::new(&env);
+        let mut count = 0u32;
+        let mut skipped = 0u32;
+
+        for i in 0..schedules.len() {
+            if count >= limit {
+                break;
+            }
+            let schedule = schedules.get(i).unwrap();
+            if schedule.recipient == recipient {
+                if skipped < offset {
+                    skipped += 1;
+                    continue;
+                }
+                results.push_back(schedule);
+                count += 1;
+            }
+        }
+        results
+    }
+
+    /// Query release schedules by released status
+    pub fn query_schedules_by_status(
+        env: Env,
+        released: bool,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<ProgramReleaseSchedule> {
+        let schedules: Vec<ProgramReleaseSchedule> = env
+            .storage()
+            .instance()
+            .get(&SCHEDULES)
+            .unwrap_or_else(|| Vec::new(&env));
+        let mut results = Vec::new(&env);
+        let mut count = 0u32;
+        let mut skipped = 0u32;
+
+        for i in 0..schedules.len() {
+            if count >= limit {
+                break;
+            }
+            let schedule = schedules.get(i).unwrap();
+            if schedule.released == released {
+                if skipped < offset {
+                    skipped += 1;
+                    continue;
+                }
+                results.push_back(schedule);
+                count += 1;
+            }
+        }
+        results
+    }
+
+    /// Query release history with filtering and pagination
+    pub fn query_releases_by_recipient(
+        env: Env,
+        recipient: Address,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<ProgramReleaseHistory> {
+        let history: Vec<ProgramReleaseHistory> = env
+            .storage()
+            .instance()
+            .get(&RELEASE_HISTORY)
+            .unwrap_or_else(|| Vec::new(&env));
+        let mut results = Vec::new(&env);
+        let mut count = 0u32;
+        let mut skipped = 0u32;
+
+        for i in 0..history.len() {
+            if count >= limit {
+                break;
+            }
+            let record = history.get(i).unwrap();
+            if record.recipient == recipient {
+                if skipped < offset {
+                    skipped += 1;
+                    continue;
+                }
+                results.push_back(record);
+                count += 1;
+            }
+        }
+        results
+    }
+
+    /// Get aggregate statistics for the program
+    pub fn get_program_aggregate_stats(env: Env) -> ProgramAggregateStats {
+        let program_data: ProgramData = env
+            .storage()
+            .instance()
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"));
+        let schedules: Vec<ProgramReleaseSchedule> = env
+            .storage()
+            .instance()
+            .get(&SCHEDULES)
+            .unwrap_or_else(|| Vec::new(&env));
+
+        let mut scheduled_count = 0u32;
+        let mut released_count = 0u32;
+
+        for i in 0..schedules.len() {
+            let schedule = schedules.get(i).unwrap();
+            if schedule.released {
+                released_count += 1;
+            } else {
+                scheduled_count += 1;
             }
         }
 
-        due
+        ProgramAggregateStats {
+            total_funds: program_data.total_funds,
+            remaining_balance: program_data.remaining_balance,
+            total_paid_out: program_data.total_funds - program_data.remaining_balance,
+            payout_count: program_data.payout_history.len(),
+            scheduled_count,
+            released_count,
+        }
     }
 
-    /// Retrieves release history for a program.
-    ///
-    /// # Arguments
-    /// * `env` - The contract environment
-    /// * `program_id` - The program to query
-    ///
-    /// # Returns
-    /// * `Vec<ProgramReleaseHistory>` - Complete release history
-    pub fn get_program_release_history(env: Env, program_id: String) -> Vec<ProgramReleaseHistory> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::ReleaseHistory(program_id))
-            .unwrap_or(vec![&env])
-    }
-}
-
-/// Helper function to calculate total scheduled amount for a program.
-fn get_program_total_scheduled_amount(env: &Env, program_id: &String) -> i128 {
-    let next_id: u64 = env
-        .storage()
-        .persistent()
-        .get(&DataKey::NextScheduleId(program_id.clone()))
-        .unwrap_or(1);
-
-    let mut total = 0i128;
-    for schedule_id in 1..next_id {
-        if env
+    /// Get payouts by recipient
+    pub fn get_payouts_by_recipient(
+        env: Env,
+        recipient: Address,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<PayoutRecord> {
+        let program_data: ProgramData = env
             .storage()
-            .persistent()
-            .has(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id))
-        {
-            let schedule: ProgramReleaseSchedule = env
-                .storage()
-                .persistent()
-                .get(&DataKey::ReleaseSchedule(program_id.clone(), schedule_id))
-                .unwrap();
+            .instance()
+            .get(&PROGRAM_DATA)
+            .unwrap_or_else(|| panic!("Program not initialized"));
+        let history = program_data.payout_history;
+        let mut results = Vec::new(&env);
+        let mut count = 0u32;
+        let mut skipped = 0u32;
+
+        for i in 0..history.len() {
+            if count >= limit {
+                break;
+            }
+            let record = history.get(i).unwrap();
+            if record.recipient == recipient {
+                if skipped < offset {
+                    skipped += 1;
+                    continue;
+                }
+                results.push_back(record);
+                count += 1;
+            }
+        }
+        results
+    }
+
+    /// Get pending schedules (not yet released)
+    pub fn get_pending_schedules(env: Env) -> Vec<ProgramReleaseSchedule> {
+        let schedules: Vec<ProgramReleaseSchedule> = env
+            .storage()
+            .instance()
+            .get(&SCHEDULES)
+            .unwrap_or_else(|| Vec::new(&env));
+        let mut results = Vec::new(&env);
+
+        for i in 0..schedules.len() {
+            let schedule = schedules.get(i).unwrap();
+            if !schedule.released {
+                results.push_back(schedule);
+            }
+        }
+        results
+    }
+
+    /// Get due schedules (ready to be released)
+    pub fn get_due_schedules(env: Env) -> Vec<ProgramReleaseSchedule> {
+        let schedules: Vec<ProgramReleaseSchedule> = env
+            .storage()
+            .instance()
+            .get(&SCHEDULES)
+            .unwrap_or_else(|| Vec::new(&env));
+        let now = env.ledger().timestamp();
+        let mut results = Vec::new(&env);
+
+        for i in 0..schedules.len() {
+            let schedule = schedules.get(i).unwrap();
+            if !schedule.released && schedule.release_timestamp <= now {
+                results.push_back(schedule);
+            }
+        }
+        results
+    }
+
+    /// Get total amount in pending schedules
+    pub fn get_total_scheduled_amount(env: Env) -> i128 {
+        let schedules: Vec<ProgramReleaseSchedule> = env
+            .storage()
+            .instance()
+            .get(&SCHEDULES)
+            .unwrap_or_else(|| Vec::new(&env));
+        let mut total = 0i128;
+
+        for i in 0..schedules.len() {
+            let schedule = schedules.get(i).unwrap();
             if !schedule.released {
                 total += schedule.amount;
             }
         }
+        total
     }
-
-    total
 }
-
-/// ============================================================================
-// Tests
-// ============================================================================
 
 #[cfg(test)]
 mod test {
@@ -3823,3 +1873,4 @@ mod test {
         client.update_rate_limit_config(&3600, &10, &30);
     }
 }
+mod test;
