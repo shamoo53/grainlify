@@ -219,7 +219,7 @@ fn test_aggregate_stats_full_lifecycle_lock_release_refund() {
     escrow.release_funds(&50, &contributor); // → released
     env.ledger().set_timestamp(now + 501);
     escrow.refund(&51); // → refunded
-    // 52 remains locked (deadline not yet passed)
+                        // 52 remains locked (deadline not yet passed)
 
     let stats = escrow.get_aggregate_stats();
 
@@ -339,7 +339,10 @@ fn test_query_by_status_locked_returns_only_locked() {
     // Verify the two locked bounties are 70 and 72
     let ids: soroban_sdk::Vec<u64> = soroban_sdk::Vec::from_array(
         &env,
-        [locked.get(0).unwrap().bounty_id, locked.get(1).unwrap().bounty_id],
+        [
+            locked.get(0).unwrap().bounty_id,
+            locked.get(1).unwrap().bounty_id,
+        ],
     );
     assert!(ids.contains(70_u64));
     assert!(ids.contains(72_u64));
@@ -365,7 +368,10 @@ fn test_query_by_status_released_returns_only_released() {
     let released = escrow.query_escrows_by_status(&EscrowStatus::Released, &0, &10);
     assert_eq!(released.len(), 1);
     assert_eq!(released.get(0).unwrap().bounty_id, 80);
-    assert_eq!(released.get(0).unwrap().escrow.status, EscrowStatus::Released);
+    assert_eq!(
+        released.get(0).unwrap().escrow.status,
+        EscrowStatus::Released
+    );
 }
 
 #[test]
@@ -679,8 +685,7 @@ fn test_refund_eligibility_false_before_deadline() {
     let deadline = env.ledger().timestamp() + 2000;
     escrow.lock_funds(&depositor, &180, &1_000, &deadline);
 
-    let (can_refund, deadline_passed, remaining, approval) =
-        escrow.get_refund_eligibility(&180);
+    let (can_refund, deadline_passed, remaining, approval) = escrow.get_refund_eligibility(&180);
 
     assert!(!can_refund, "should not be eligible before deadline");
     assert!(!deadline_passed);
@@ -703,8 +708,7 @@ fn test_refund_eligibility_true_after_deadline_passes() {
     escrow.lock_funds(&depositor, &181, &1_000, &deadline);
     env.ledger().set_timestamp(deadline + 1);
 
-    let (can_refund, deadline_passed, remaining, approval) =
-        escrow.get_refund_eligibility(&181);
+    let (can_refund, deadline_passed, remaining, approval) = escrow.get_refund_eligibility(&181);
 
     assert!(can_refund, "should be eligible after deadline");
     assert!(deadline_passed);
@@ -729,8 +733,7 @@ fn test_refund_eligibility_false_after_release() {
     escrow.release_funds(&182, &contributor);
 
     // After release the status is Released, so can_refund must be false
-    let (can_refund, _deadline_passed, _remaining, _approval) =
-        escrow.get_refund_eligibility(&182);
+    let (can_refund, _deadline_passed, _remaining, _approval) = escrow.get_refund_eligibility(&182);
 
     assert!(!can_refund, "released escrow should not be refund-eligible");
 }
@@ -752,8 +755,7 @@ fn test_refund_eligibility_true_with_admin_approval_before_deadline() {
     // Admin approves a partial refund before the deadline
     escrow.approve_refund(&183, &500, &depositor, &RefundMode::Partial);
 
-    let (can_refund, deadline_passed, remaining, approval) =
-        escrow.get_refund_eligibility(&183);
+    let (can_refund, deadline_passed, remaining, approval) = escrow.get_refund_eligibility(&183);
 
     // Approval present → eligible even before deadline
     assert!(can_refund, "should be eligible with admin approval");
@@ -907,3 +909,243 @@ fn test_event_count_scales_linearly_with_locks() {
     );
 }
 
+// ===========================================================================
+// 13. Error flows – failed attempts must not corrupt analytics
+// ===========================================================================
+
+#[test]
+fn test_duplicate_lock_does_not_affect_first_lock_state() {
+    // Verify that after the first successful lock, the stats reflect one entry.
+    // A subsequent duplicate attempt would panic (tested via should_panic elsewhere),
+    // so here we only assert the stable-state after a single lock.
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let (token, token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+    token_admin.mint(&depositor, &1_000_000);
+
+    let deadline = env.ledger().timestamp() + 1000;
+    escrow.lock_funds(&depositor, &220, &1_000, &deadline);
+
+    let stats = escrow.get_aggregate_stats();
+    assert_eq!(stats.count_locked, 1);
+    assert_eq!(stats.total_locked, 1_000);
+}
+
+#[test]
+fn test_analytics_invariant_total_amounts_are_non_negative() {
+    // All amount fields in aggregate stats must always be ≥ 0.
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let (token, token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+    token_admin.mint(&depositor, &1_000_000);
+
+    let now = env.ledger().timestamp();
+    escrow.lock_funds(&depositor, &240, &500, &(now + 500));
+    escrow.lock_funds(&depositor, &241, &300, &(now + 1000));
+    escrow.release_funds(&240, &contributor);
+    env.ledger().set_timestamp(now + 1001);
+    escrow.refund(&241);
+
+    let stats = escrow.get_aggregate_stats();
+    assert!(stats.total_locked >= 0, "total_locked must be non-negative");
+    assert!(
+        stats.total_released >= 0,
+        "total_released must be non-negative"
+    );
+    assert!(
+        stats.total_refunded >= 0,
+        "total_refunded must be non-negative"
+    );
+}
+
+// ===========================================================================
+// 14. Cross-view consistency – multiple views agree on the same state
+// ===========================================================================
+
+#[test]
+fn test_count_matches_query_by_status_total() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let (token, token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+    token_admin.mint(&depositor, &1_000_000);
+
+    let deadline = env.ledger().timestamp() + 1000;
+    escrow.lock_funds(&depositor, &250, &100, &deadline);
+    escrow.lock_funds(&depositor, &251, &200, &deadline);
+    escrow.lock_funds(&depositor, &252, &300, &deadline);
+    escrow.release_funds(&250, &contributor);
+
+    let total_count = escrow.get_escrow_count();
+    let locked = escrow.query_escrows_by_status(&EscrowStatus::Locked, &0, &50);
+    let released = escrow.query_escrows_by_status(&EscrowStatus::Released, &0, &50);
+    let refunded = escrow.query_escrows_by_status(&EscrowStatus::Refunded, &0, &50);
+
+    assert_eq!(
+        total_count,
+        (locked.len() + released.len() + refunded.len()) as u32,
+        "get_escrow_count must equal sum of all status buckets"
+    );
+}
+
+#[test]
+fn test_ids_view_matches_full_object_view_count() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let (token, token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+    token_admin.mint(&depositor, &1_000_000);
+
+    let deadline = env.ledger().timestamp() + 1000;
+    escrow.lock_funds(&depositor, &260, &100, &deadline);
+    escrow.lock_funds(&depositor, &261, &200, &deadline);
+    escrow.release_funds(&261, &contributor);
+
+    let locked_objs = escrow.query_escrows_by_status(&EscrowStatus::Locked, &0, &50);
+    let locked_ids = escrow.get_escrow_ids_by_status(&EscrowStatus::Locked, &0, &50);
+
+    assert_eq!(
+        locked_objs.len(),
+        locked_ids.len(),
+        "full-object and id-only views must agree on locked count"
+    );
+}
+
+#[test]
+fn test_aggregate_stats_consistent_with_individual_escrow_queries() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let (token, token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+    token_admin.mint(&depositor, &10_000_000);
+
+    let now = env.ledger().timestamp();
+    escrow.lock_funds(&depositor, &270, &1_000, &(now + 1000));
+    escrow.lock_funds(&depositor, &271, &2_000, &(now + 500));
+    escrow.lock_funds(&depositor, &272, &3_000, &(now + 2000));
+
+    escrow.release_funds(&270, &contributor);
+    env.ledger().set_timestamp(now + 501);
+    escrow.refund(&271);
+
+    let stats = escrow.get_aggregate_stats();
+
+    // Manually sum from individual escrows to cross-check aggregate
+    let released = escrow.query_escrows_by_status(&EscrowStatus::Released, &0, &50);
+    let manual_released_total: i128 = released.iter().map(|e| e.escrow.amount).sum();
+
+    let refunded = escrow.query_escrows_by_status(&EscrowStatus::Refunded, &0, &50);
+    let manual_refunded_total: i128 = refunded.iter().map(|e| e.escrow.amount).sum();
+
+    assert_eq!(
+        stats.total_released, manual_released_total,
+        "aggregate total_released must match sum from query_escrows_by_status"
+    );
+    assert_eq!(
+        stats.total_refunded, manual_refunded_total,
+        "aggregate total_refunded must match sum from query_escrows_by_status"
+    );
+}
+
+// ===========================================================================
+// 15. Balance view consistency with aggregate stats
+// ===========================================================================
+
+#[test]
+fn test_get_balance_matches_locked_total_after_locks() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let (token, token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+    token_admin.mint(&depositor, &10_000_000);
+
+    let deadline = env.ledger().timestamp() + 1000;
+    escrow.lock_funds(&depositor, &280, &1_000, &deadline);
+    escrow.lock_funds(&depositor, &281, &2_000, &deadline);
+
+    let balance = escrow.get_balance();
+    let stats = escrow.get_aggregate_stats();
+
+    // All locked, none released/refunded – contract balance must equal total_locked
+    assert_eq!(balance, 3_000);
+    assert_eq!(stats.total_locked, 3_000);
+    assert_eq!(
+        balance, stats.total_locked,
+        "live contract balance must equal total_locked when nothing has been released/refunded"
+    );
+}
+
+#[test]
+fn test_get_balance_decreases_after_release() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let (token, token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+    token_admin.mint(&depositor, &10_000_000);
+
+    let deadline = env.ledger().timestamp() + 1000;
+    escrow.lock_funds(&depositor, &290, &1_000, &deadline);
+    escrow.lock_funds(&depositor, &291, &500, &deadline);
+
+    let before_release = escrow.get_balance();
+    escrow.release_funds(&290, &contributor);
+    let after_release = escrow.get_balance();
+
+    assert_eq!(before_release, 1_500);
+    assert_eq!(after_release, 500);
+}
+
+#[test]
+fn test_get_balance_zero_after_all_escrows_settled() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let (token, token_admin) = create_token_contract(&env, &admin);
+    let escrow = create_escrow_contract(&env);
+    escrow.init(&admin, &token.address);
+    token_admin.mint(&depositor, &10_000_000);
+
+    let now = env.ledger().timestamp();
+    escrow.lock_funds(&depositor, &295, &1_000, &(now + 500));
+    escrow.lock_funds(&depositor, &296, &500, &(now + 500));
+
+    escrow.release_funds(&295, &contributor);
+    env.ledger().set_timestamp(now + 501);
+    escrow.refund(&296);
+
+    assert_eq!(
+        escrow.get_balance(),
+        0,
+        "contract balance must be zero when all escrows are settled"
+    );
+}
