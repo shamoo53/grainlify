@@ -1,8 +1,6 @@
 #![no_std]
 mod events;
 
-mod test_bounty_escrow;
-
 #[cfg(test)]
 mod test_rbac;
 
@@ -1227,10 +1225,6 @@ impl BountyEscrowContract {
 
         env.storage()
             .persistent()
-            .set(&DataKey::Escrow(bounty_id), &escrow);
-
-        env.storage()
-            .persistent()
             .set(&DataKey::RefundApproval(bounty_id), &approval);
 
         Ok(())
@@ -1364,14 +1358,10 @@ impl BountyEscrowContract {
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         let client = token::Client::new(&env, &token_addr);
 
-        // Refund only what is still remaining (partial releases may have already gone out)
-        client.transfer(
-            &env.current_contract_address(),
-            &escrow.depositor,
-            &escrow.remaining_amount,
-        );
+        // Transfer the calculated refund amount to the designated recipient
+        client.transfer(&env.current_contract_address(), &refund_to, &refund_amount);
 
-        // Update escrow state
+        // Update escrow state: subtract the amount exactly refunded
         escrow.remaining_amount -= refund_amount;
         if is_full || escrow.remaining_amount == 0 {
             escrow.status = EscrowStatus::Refunded;
@@ -1406,10 +1396,9 @@ impl BountyEscrowContract {
             FundsRefunded {
                 version: EVENT_VERSION_V2,
                 bounty_id,
-
-                amount: escrow.remaining_amount,
-                refund_to: escrow.depositor,
-                timestamp: env.ledger().timestamp(),
+                amount: refund_amount,
+                refund_to: refund_to.clone(),
+                timestamp: now,
             },
         );
 
@@ -2095,15 +2084,15 @@ mod test_analytics_monitoring;
 #[cfg(test)]
 mod test_auto_refund_permissions;
 #[cfg(test)]
+mod test_bounty_escrow;
+#[cfg(test)]
 mod test_dispute_resolution;
 mod test_expiration_and_dispute;
 #[cfg(test)]
 mod test_granular_pause;
 #[cfg(test)]
-mod test_pause;
-#[cfg(test)]
 mod test_lifecycle;
 #[cfg(test)]
-mod test_bounty_escrow;
-=======
+mod test_pause;
+#[cfg(test)]
 mod test_query_filters;

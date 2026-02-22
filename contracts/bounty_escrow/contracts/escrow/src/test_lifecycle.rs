@@ -3,14 +3,16 @@
 use super::*;
 use soroban_sdk::{
     testutils::{Address as _, Ledger, MockAuth, MockAuthInvoke},
-    token, Address, Env, IntoVal
+    token, Address, Env, IntoVal,
 };
 
 fn create_token_contract<'a>(
     e: &Env,
     admin: &Address,
 ) -> (token::Client<'a>, token::StellarAssetClient<'a>) {
-    let contract_address = e.register_stellar_asset_contract_v2(admin.clone()).address();
+    let contract_address = e
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
     (
         token::Client::new(e, &contract_address),
         token::StellarAssetClient::new(e, &contract_address),
@@ -37,7 +39,7 @@ fn test_full_bounty_lifecycle_with_refund() {
     let (token_client, token_admin) = create_token_contract(&env, &admin);
     let escrow_client = create_escrow_contract(&env);
 
-    // 3. Initialize contract  
+    // 3. Initialize contract
     env.mock_auths(&[MockAuth {
         address: &admin,
         invoke: &MockAuthInvoke {
@@ -63,25 +65,28 @@ fn test_full_bounty_lifecycle_with_refund() {
 
     token_admin.mint(&depositor, &10000);
 
-    // 5. Lock funds for a bounty  
+    // 5. Lock funds for a bounty
     let bounty_id = 101u64;
     let initial_amount = 5000i128;
     let deadline = env.ledger().timestamp() + 86400; // 1 day
- 
+
     env.mock_auths(&[MockAuth {
         address: &depositor,
         invoke: &MockAuthInvoke {
             contract: &escrow_client.address,
             fn_name: "lock_funds",
             args: (depositor.clone(), bounty_id, initial_amount, deadline).into_val(&env),
-            sub_invokes: &[
-                MockAuthInvoke {
-                    contract: &token_client.address,
-                    fn_name: "transfer",
-                    args: (depositor.clone(), escrow_client.address.clone(), initial_amount).into_val(&env),
-                    sub_invokes: &[],
-                },
-            ],
+            sub_invokes: &[MockAuthInvoke {
+                contract: &token_client.address,
+                fn_name: "transfer",
+                args: (
+                    depositor.clone(),
+                    escrow_client.address.clone(),
+                    initial_amount,
+                )
+                    .into_val(&env),
+                sub_invokes: &[],
+            }],
         },
     }]);
     assert_eq!(token_client.balance(&depositor), 10000);
@@ -109,7 +114,7 @@ fn test_full_bounty_lifecycle_with_refund() {
         Err(e) => {
             // Convert the error to a string or check error code
             // println!("Expected error occurred: {:?}", e);
-        },
+        }
         _ => panic!("Expected error"),
     }
 
@@ -129,7 +134,8 @@ fn test_full_bounty_lifecycle_with_refund() {
     escrow_client.approve_refund(&bounty_id, &refund_amount, &depositor, &RefundMode::Partial);
 
     // Verify eligibility
-    let (can_refund, deadline_passed, remaining, approval) = escrow_client.get_refund_eligibility(&bounty_id);
+    let (can_refund, deadline_passed, remaining, approval) =
+        escrow_client.get_refund_eligibility(&bounty_id);
     assert!(can_refund);
     assert!(!deadline_passed);
     assert_eq!(remaining, initial_amount);
@@ -142,16 +148,19 @@ fn test_full_bounty_lifecycle_with_refund() {
             contract: &escrow_client.address,
             fn_name: "refund",
             args: (bounty_id,).into_val(&env),
-            sub_invokes: &[
-                MockAuthInvoke {
-                    contract: &token_client.address,
-                    fn_name: "transfer",
-                    args: (escrow_client.address.clone(), depositor.clone(), refund_amount).into_val(&env),
-                    sub_invokes: &[],
-                },
-            ],
+            sub_invokes: &[MockAuthInvoke {
+                contract: &token_client.address,
+                fn_name: "transfer",
+                args: (
+                    escrow_client.address.clone(),
+                    depositor.clone(),
+                    refund_amount,
+                )
+                    .into_val(&env),
+                sub_invokes: &[],
+            }],
         },
-    }]);   
+    }]);
     escrow_client.refund(&bounty_id);
 
     // Verify partially refunded state
@@ -180,7 +189,7 @@ fn test_full_bounty_lifecycle_with_refund() {
             sub_invokes: &[],
         },
     }]);
-    
+
     escrow_client.approve_refund(&bounty_id, &final_amount, &depositor, &RefundMode::Full);
 
     // Set auth for final refund with nested token transfer
@@ -190,14 +199,17 @@ fn test_full_bounty_lifecycle_with_refund() {
             contract: &escrow_client.address,
             fn_name: "refund",
             args: (bounty_id,).into_val(&env),
-            sub_invokes: &[
-                MockAuthInvoke {
-                    contract: &token_client.address,
-                    fn_name: "transfer",
-                    args: (escrow_client.address.clone(), depositor.clone(), final_amount).into_val(&env),
-                    sub_invokes: &[],
-                },
-            ],
+            sub_invokes: &[MockAuthInvoke {
+                contract: &token_client.address,
+                fn_name: "transfer",
+                args: (
+                    escrow_client.address.clone(),
+                    depositor.clone(),
+                    final_amount,
+                )
+                    .into_val(&env),
+                sub_invokes: &[],
+            }],
         },
     }]);
 
