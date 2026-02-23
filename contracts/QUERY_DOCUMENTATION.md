@@ -1,11 +1,13 @@
 # Escrow Query Functions Documentation
 
 ## Overview
+
 This document describes the query functions available for both Bounty Escrow and Program Escrow contracts, including usage patterns, filtering capabilities, and performance considerations.
 
 ## Bounty Escrow Query Functions
 
 ### 1. Query Escrows with Filtering
+
 ```rust
 pub fn query_escrows(env: Env, filter: EscrowQueryFilter, offset: u32, limit: u32) -> Vec<EscrowWithId>
 ```
@@ -13,6 +15,7 @@ pub fn query_escrows(env: Env, filter: EscrowQueryFilter, offset: u32, limit: u3
 **Purpose**: Retrieve escrows with comprehensive filtering and pagination support.
 
 **Parameters**:
+
 - `filter`: EscrowQueryFilter with optional fields:
   - `status`: Filter by EscrowStatus (Locked, Released, Refunded)
   - `depositor`: Filter by depositor address
@@ -24,6 +27,7 @@ pub fn query_escrows(env: Env, filter: EscrowQueryFilter, offset: u32, limit: u3
 - `limit`: Maximum number of records to return
 
 **Example Usage**:
+
 ```rust
 // Query all locked escrows with amount >= 1000
 let filter = EscrowQueryFilter {
@@ -38,6 +42,7 @@ let results = contract.query_escrows(env, filter, 0, 50);
 ```
 
 ### 2. Query Escrows by Depositor
+
 ```rust
 pub fn query_escrows_by_depositor(env: Env, depositor: Address, offset: u32, limit: u32) -> Vec<EscrowWithId>
 ```
@@ -47,6 +52,7 @@ pub fn query_escrows_by_depositor(env: Env, depositor: Address, offset: u32, lim
 **Performance**: O(n) where n = number of escrows by depositor (uses depositor index for fast lookup)
 
 ### 3. Get Aggregate Statistics
+
 ```rust
 pub fn get_aggregate_stats(env: Env) -> AggregateStats
 ```
@@ -54,6 +60,7 @@ pub fn get_aggregate_stats(env: Env) -> AggregateStats
 **Purpose**: Get comprehensive statistics across all escrows.
 
 **Returns**:
+
 - `total_locked`: Total amount in locked escrows
 - `total_released`: Total amount released
 - `total_refunded`: Total amount refunded
@@ -62,6 +69,7 @@ pub fn get_aggregate_stats(env: Env) -> AggregateStats
 - `count_refunded`: Number of refunded escrows
 
 ### 4. Get Escrows by Status
+
 ```rust
 pub fn get_escrows_by_status(env: Env, status: EscrowStatus, offset: u32, limit: u32) -> Vec<u64>
 ```
@@ -69,6 +77,7 @@ pub fn get_escrows_by_status(env: Env, status: EscrowStatus, offset: u32, limit:
 **Purpose**: Retrieve bounty IDs filtered by status with pagination.
 
 ### 5. Get Escrow Count
+
 ```rust
 pub fn get_escrow_count(env: Env) -> u32
 ```
@@ -78,6 +87,7 @@ pub fn get_escrow_count(env: Env) -> u32
 ## Program Escrow Query Functions
 
 ### 1. Query Payout History
+
 ```rust
 pub fn query_payout_history(env: Env, filter: PayoutQueryFilter, offset: u32, limit: u32) -> Vec<PayoutRecord>
 ```
@@ -85,6 +95,7 @@ pub fn query_payout_history(env: Env, filter: PayoutQueryFilter, offset: u32, li
 **Purpose**: Retrieve payout history with filtering and pagination.
 
 **Filter Options**:
+
 - `recipient`: Filter by recipient address
 - `min_amount`: Minimum payout amount
 - `max_amount`: Maximum payout amount
@@ -92,6 +103,7 @@ pub fn query_payout_history(env: Env, filter: PayoutQueryFilter, offset: u32, li
 - `max_timestamp`: Maximum timestamp
 
 ### 2. Query Release Schedules
+
 ```rust
 pub fn query_release_schedules(env: Env, filter: ScheduleQueryFilter, offset: u32, limit: u32) -> Vec<ProgramReleaseSchedule>
 ```
@@ -99,6 +111,7 @@ pub fn query_release_schedules(env: Env, filter: ScheduleQueryFilter, offset: u3
 **Purpose**: Query scheduled releases with comprehensive filtering.
 
 **Filter Options**:
+
 - `recipient`: Filter by recipient address
 - `released`: Filter by release status (true/false)
 - `min_amount`: Minimum scheduled amount
@@ -107,6 +120,7 @@ pub fn query_release_schedules(env: Env, filter: ScheduleQueryFilter, offset: u3
 - `max_release_timestamp`: Maximum release timestamp
 
 ### 3. Query Release History
+
 ```rust
 pub fn query_release_history(env: Env, recipient: Option<Address>, offset: u32, limit: u32) -> Vec<ProgramReleaseHistory>
 ```
@@ -114,6 +128,7 @@ pub fn query_release_history(env: Env, recipient: Option<Address>, offset: u32, 
 **Purpose**: Retrieve completed release history, optionally filtered by recipient.
 
 ### 4. Get Program Aggregate Statistics
+
 ```rust
 pub fn get_program_aggregate_stats(env: Env) -> ProgramAggregateStats
 ```
@@ -121,6 +136,7 @@ pub fn get_program_aggregate_stats(env: Env) -> ProgramAggregateStats
 **Purpose**: Get comprehensive program statistics.
 
 **Returns**:
+
 - `total_funds`: Total funds locked in program
 - `remaining_balance`: Current remaining balance
 - `total_paid_out`: Total amount paid out
@@ -129,6 +145,7 @@ pub fn get_program_aggregate_stats(env: Env) -> ProgramAggregateStats
 - `released_count`: Number of completed schedules
 
 ### 5. Get Payouts by Recipient
+
 ```rust
 pub fn get_payouts_by_recipient(env: Env, recipient: Address, offset: u32, limit: u32) -> Vec<PayoutRecord>
 ```
@@ -136,6 +153,7 @@ pub fn get_payouts_by_recipient(env: Env, recipient: Address, offset: u32, limit
 **Purpose**: Retrieve all payouts for a specific recipient with pagination.
 
 ### 6. Get Pending Schedules
+
 ```rust
 pub fn get_pending_schedules(env: Env) -> Vec<ProgramReleaseSchedule>
 ```
@@ -143,6 +161,7 @@ pub fn get_pending_schedules(env: Env) -> Vec<ProgramReleaseSchedule>
 **Purpose**: Get all schedules that haven't been released yet.
 
 ### 7. Get Due Schedules
+
 ```rust
 pub fn get_due_schedules(env: Env) -> Vec<ProgramReleaseSchedule>
 ```
@@ -150,6 +169,7 @@ pub fn get_due_schedules(env: Env) -> Vec<ProgramReleaseSchedule>
 **Purpose**: Get all schedules that are ready to be released (timestamp <= now).
 
 ### 8. Get Total Scheduled Amount
+
 ```rust
 pub fn get_total_scheduled_amount(env: Env) -> i128
 ```
@@ -159,11 +179,13 @@ pub fn get_total_scheduled_amount(env: Env) -> i128
 ## Performance Considerations
 
 ### Storage Strategy
+
 - **Indexed Storage**: Both contracts maintain indexes for efficient queries
   - Bounty Escrow: Global escrow index + per-depositor indexes
   - Program Escrow: Uses in-memory vectors for schedules and history
-  
+
 ### Query Performance
+
 - **Linear Scans**: Most queries perform O(n) scans with early termination when limit is reached
 - **Indexed Lookups**: Depositor queries use O(1) index lookup + O(m) scan where m = depositor's escrows
 - **Pagination**: Always use pagination for large datasets to avoid hitting transaction limits
@@ -171,20 +193,22 @@ pub fn get_total_scheduled_amount(env: Env) -> i128
 ### Best Practices
 
 1. **Use Pagination**:
+
    ```rust
    // Good: Paginated query
    let page_size = 50;
    let results = contract.query_escrows(env, filter, 0, page_size);
-   
+
    // Avoid: Requesting all records at once
    let all_results = contract.query_escrows(env, filter, 0, 10000);
    ```
 
 2. **Leverage Indexes**:
+
    ```rust
    // Good: Use indexed query for depositor
    let results = contract.query_escrows_by_depositor(env, depositor, 0, 50);
-   
+
    // Less efficient: Filter all escrows by depositor
    let filter = EscrowQueryFilter {
        depositor: Some(depositor),
@@ -194,6 +218,7 @@ pub fn get_total_scheduled_amount(env: Env) -> i128
    ```
 
 3. **Combine Filters**:
+
    ```rust
    // Efficient: Apply multiple filters in single query
    let filter = EscrowQueryFilter {
@@ -205,10 +230,11 @@ pub fn get_total_scheduled_amount(env: Env) -> i128
    ```
 
 4. **Use Aggregate Functions**:
+
    ```rust
    // Good: Single call for statistics
    let stats = contract.get_aggregate_stats(env);
-   
+
    // Avoid: Multiple queries to calculate stats
    let locked = contract.get_escrows_by_status(env, EscrowStatus::Locked, 0, 1000);
    let released = contract.get_escrows_by_status(env, EscrowStatus::Released, 0, 1000);
@@ -247,12 +273,13 @@ For production systems with high query volumes:
 ## Integration Examples
 
 ### Backend Monitoring Service
+
 ```rust
 // Poll for new locked escrows
 let recent_locked = contract.get_escrows_by_status(
-    env, 
-    EscrowStatus::Locked, 
-    0, 
+    env,
+    EscrowStatus::Locked,
+    0,
     100
 );
 
@@ -264,6 +291,7 @@ if stats.total_locked > threshold {
 ```
 
 ### User Dashboard
+
 ```rust
 // Show user's escrows
 let user_escrows = contract.query_escrows_by_depositor(
@@ -283,6 +311,7 @@ let user_payouts = contract.get_payouts_by_recipient(
 ```
 
 ### Analytics Service
+
 ```rust
 // Daily statistics
 let stats = contract.get_program_aggregate_stats(env);
@@ -296,11 +325,50 @@ generate_daily_report(stats, pending, due);
 ## Migration Notes
 
 Existing contracts without indexes will need to:
+
 1. Deploy updated contract code
 2. Rebuild indexes by scanning existing escrows
 3. Update client code to use new query functions
 
 For contracts with many existing escrows, consider:
+
 - Gradual index building
 - Temporary read-only mode during migration
 - Off-chain index generation from historical events
+
+## SDK Pagination Helper
+
+The TypeScript SDK exports a `fetchAllPages` helper that drives any
+`(offset, limit) => Promise<T[]>` fetcher, requesting pages sequentially
+until a partial or empty response signals the end of data.
+
+### Usage
+
+```typescript
+import { fetchAllPages } from "@grainlify/contracts-sdk";
+
+// Fetch every payout record in the program, regardless of total count
+const allPayouts = await fetchAllPages(
+  (offset, limit) => client.queryPayoutHistory({}, offset, limit),
+  50, // page size (defaults to 50 if omitted)
+);
+
+// Fetch only unreleased schedules for a specific recipient
+const pending = await fetchAllPages(
+  (offset, limit) =>
+    client.queryReleaseSchedules(
+      { recipient: "GABC...XYZ", released: false },
+      offset,
+      limit,
+    ),
+  25,
+);
+```
+
+### Guarantees
+
+| Guarantee            | Detail                                                                      |
+| -------------------- | --------------------------------------------------------------------------- |
+| **Exact-once**       | Every item is returned exactly once, in insertion order, with no duplicates |
+| **Sequential**       | Each page is awaited before the next request — no concurrent RPC calls      |
+| **Auto-termination** | Stops as soon as a page shorter than `pageSize` is returned                 |

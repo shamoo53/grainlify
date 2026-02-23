@@ -170,3 +170,17 @@ pub fn emit_pause_state_changed(env: &Env, event: crate::PauseStateChanged) {
     let topics = (symbol_short!("pause"), event.operation.clone());
     env.events().publish(topics, event);
 }
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct EmergencyWithdrawEvent {
+    pub admin: Address,
+    pub recipient: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+pub fn emit_emergency_withdraw(env: &Env, event: EmergencyWithdrawEvent) {
+    let topics = (symbol_short!("em_wtd"),);
+    env.events().publish(topics, event.clone());
+}

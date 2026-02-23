@@ -1,13 +1,16 @@
 # Error Mapping Documentation
 
-This document describes how errors from the Soroban smart contracts are mapped to typed SDK errors.
+This document describes how errors from all Grainlify Soroban smart contracts are mapped to typed SDK errors and backend messages.
 
 ## Error Flow
 
 ```
-Contract Error → parseContractError() → Typed ContractError → Application
-Network Error → NetworkError → Application
-Invalid Input → ValidationError → Application
+On-chain contract error
+  ├── (numeric code) → parseContractErrorByCode() → Typed ContractError
+  └── (panic string) → parseContractError()       → Typed ContractError
+
+Network / RPC error   → NetworkError   → Application
+Invalid input         → ValidationError → Application
 ```
 
 ## Error Types
@@ -21,21 +24,6 @@ Invalid Input → ValidationError → Application
 - `field`: The name of the invalid field (optional)
 - `message`: Description of what's invalid
 
-**Examples:**
-```typescript
-// Empty program ID
-ValidationError: Program ID cannot be empty (field: 'programId')
-
-// Invalid address format
-ValidationError: recipient is not a valid Stellar address (field: 'recipient')
-
-// Zero or negative amount
-ValidationError: Amount must be greater than zero (field: 'amount')
-
-// Array length mismatch
-ValidationError: Recipients and amounts arrays must have the same length (field: 'recipients')
-```
-
 ### 2. ContractError
 
 **When thrown:** When the smart contract execution fails or returns an error.
@@ -44,31 +32,6 @@ ValidationError: Recipients and amounts arrays must have the same length (field:
 - `code`: One of the `ContractErrorCode` enum values
 - `contractErrorCode`: The numeric error code from the contract (optional)
 - `message`: Human-readable error description
-
-**Error Code Mapping:**
-
-| Contract Panic Message | SDK Error Code | Description |
-|------------------------|----------------|-------------|
-| "Program not initialized" | `NOT_INITIALIZED` | Contract not initialized via `init_program` |
-| "require_auth" failure | `UNAUTHORIZED` | Caller lacks required authorization |
-| "Insufficient balance" | `INSUFFICIENT_BALANCE` | Not enough funds for the operation |
-| "must be greater than zero" | `INVALID_AMOUNT` | Amount parameter is zero or negative |
-| "already initialized" | `ALREADY_INITIALIZED` | Attempted to initialize twice |
-| "empty batch" | `EMPTY_BATCH` | Batch payout with empty arrays |
-| "same length" | `LENGTH_MISMATCH` | Recipients/amounts array length mismatch |
-| "overflow" | `OVERFLOW` | Arithmetic overflow in calculations |
-
-**Examples:**
-```typescript
-// Calling methods before initialization
-ContractError: Program not initialized (code: NOT_INITIALIZED)
-
-// Unauthorized payout attempt
-ContractError: Unauthorized: caller does not have permission (code: UNAUTHORIZED)
-
-// Insufficient funds
-ContractError: Insufficient balance for this operation (code: INSUFFICIENT_BALANCE)
-```
 
 ### 3. NetworkError
 
@@ -80,78 +43,152 @@ ContractError: Insufficient balance for this operation (code: INSUFFICIENT_BALAN
 - `cause`: The original error that caused the network failure
 - `message`: Description of the network issue
 
-**Common Scenarios:**
+---
 
-| Scenario | Status Code | Message Pattern |
-|----------|-------------|-----------------|
-| Connection refused | - | "Failed to connect to RPC server: {url}" |
-| Request timeout | - | "Failed to connect to RPC server: {url}" |
-| Bad request | 400 | "RPC request failed with status 400" |
-| Unauthorized | 401 | "RPC request failed with status 401" |
-| Not found | 404 | "RPC request failed with status 404" |
-| Server error | 500 | "RPC request failed with status 500" |
-| Service unavailable | 503 | "RPC request failed with status 503" |
+## Complete Contract Error Mapping
 
-**Examples:**
+### Program-Escrow Contract
+
+| SDK Code | Panic / String Match | Message |
+|---|---|---|
+| `NOT_INITIALIZED` | "not initialized", "Program not initialized" | Program not initialized |
+| `UNAUTHORIZED` | "require_auth", "Unauthorized" | Unauthorized: caller does not have permission |
+| `INSUFFICIENT_BALANCE` | "Insufficient balance" | Insufficient balance for this operation |
+| `INVALID_AMOUNT` | "must be greater than zero" | Amount must be greater than zero |
+| `ALREADY_INITIALIZED` | "already initialized" | Program already initialized |
+| `EMPTY_BATCH` | "empty batch" | Cannot process empty batch |
+| `LENGTH_MISMATCH` | "same length" | Recipients and amounts vectors must have the same length |
+| `OVERFLOW` | "overflow" | Payout amount overflow |
+
+### Bounty-Escrow Contract
+
+Source: `contracts/bounty_escrow/contracts/escrow/src/lib.rs`
+
+| Code | SDK Code | Rust Variant | Message |
+|---:|---|---|---|
+| 1 | `BOUNTY_ALREADY_INITIALIZED` | AlreadyInitialized | Bounty escrow contract is already initialized |
+| 2 | `BOUNTY_NOT_INITIALIZED` | NotInitialized | Bounty escrow contract has not been initialized |
+| 3 | `BOUNTY_EXISTS` | BountyExists | A bounty with this ID already exists |
+| 4 | `BOUNTY_NOT_FOUND` | BountyNotFound | Bounty not found |
+| 5 | `BOUNTY_FUNDS_NOT_LOCKED` | FundsNotLocked | Bounty funds have not been locked yet |
+| 6 | `BOUNTY_DEADLINE_NOT_PASSED` | DeadlineNotPassed | Bounty deadline has not passed yet |
+| 7 | `BOUNTY_UNAUTHORIZED` | Unauthorized | Unauthorized: caller is not allowed to perform this bounty operation |
+| 8 | `BOUNTY_INVALID_FEE_RATE` | InvalidFeeRate | Fee rate is invalid (must be between 0 and 5000 basis points) |
+| 9 | `BOUNTY_FEE_RECIPIENT_NOT_SET` | FeeRecipientNotSet | Fee recipient address has not been configured |
+| 10 | `BOUNTY_INVALID_BATCH_SIZE` | InvalidBatchSize | Batch size is invalid (must be between 1 and 20) |
+| 11 | `BOUNTY_BATCH_SIZE_MISMATCH` | BatchSizeMismatch | Number of bounty IDs does not match the number of recipients |
+| 12 | `BOUNTY_DUPLICATE_ID` | DuplicateBountyId | Duplicate bounty ID found in batch |
+| 13 | `BOUNTY_INVALID_AMOUNT` | InvalidAmount | Bounty amount is invalid (zero, negative, or exceeds available) |
+| 14 | `BOUNTY_INVALID_DEADLINE` | InvalidDeadline | Bounty deadline is invalid (in the past or too far in the future) |
+| — | *(gap at 15)* | — | — |
+| 16 | `BOUNTY_INSUFFICIENT_FUNDS` | InsufficientFunds | Insufficient funds in the escrow for this operation |
+| 17 | `BOUNTY_REFUND_NOT_APPROVED` | RefundNotApproved | Refund has not been approved by an admin |
+| 18 | `BOUNTY_FUNDS_PAUSED` | FundsPaused | Bounty fund operations are currently paused |
+
+### Governance Contract
+
+Source: `contracts/grainlify-core/src/governance.rs`
+
+| Code | SDK Code | Rust Variant | Message |
+|---:|---|---|---|
+| 1 | `GOV_NOT_INITIALIZED` | NotInitialized | Governance contract has not been initialized |
+| 2 | `GOV_INVALID_THRESHOLD` | InvalidThreshold | Governance threshold value is invalid |
+| 3 | `GOV_THRESHOLD_TOO_LOW` | ThresholdTooLow | Governance threshold is too low |
+| 4 | `GOV_INSUFFICIENT_STAKE` | InsufficientStake | Insufficient stake to perform this governance action |
+| 5 | `GOV_PROPOSALS_NOT_FOUND` | ProposalsNotFound | No proposals found |
+| 6 | `GOV_PROPOSAL_NOT_FOUND` | ProposalNotFound | Proposal not found |
+| 7 | `GOV_PROPOSAL_NOT_ACTIVE` | ProposalNotActive | Proposal is not currently active |
+| 8 | `GOV_VOTING_NOT_STARTED` | VotingNotStarted | Voting has not started yet for this proposal |
+| 9 | `GOV_VOTING_ENDED` | VotingEnded | Voting period has ended for this proposal |
+| 10 | `GOV_VOTING_STILL_ACTIVE` | VotingStillActive | Voting is still active; cannot execute proposal yet |
+| 11 | `GOV_ALREADY_VOTED` | AlreadyVoted | You have already voted on this proposal |
+| 12 | `GOV_PROPOSAL_NOT_APPROVED` | ProposalNotApproved | Proposal has not been approved |
+| 13 | `GOV_EXECUTION_DELAY_NOT_MET` | ExecutionDelayNotMet | Execution delay period has not elapsed yet |
+| 14 | `GOV_PROPOSAL_EXPIRED` | ProposalExpired | Proposal has expired |
+
+### Circuit-Breaker (Error-Recovery)
+
+Source: `contracts/program-escrow/src/error_recovery.rs`
+
+| Code | SDK Code | Constant | Message |
+|---:|---|---|---|
+| 0 | *(success)* | ERR_NONE | Operation succeeded |
+| 1001 | `CIRCUIT_OPEN` | ERR_CIRCUIT_OPEN | Circuit breaker is open; operation rejected without attempting |
+| 1002 | `CIRCUIT_TRANSFER_FAILED` | ERR_TRANSFER_FAILED | Token transfer failed (transient error) |
+| 1003 | `CIRCUIT_INSUFFICIENT_BALANCE` | ERR_INSUFFICIENT_BALANCE | Insufficient contract balance for transfer |
+
+---
+
+## Resolving Errors
+
+### By numeric code (preferred when available)
+
+Use `parseContractErrorByCode()` when you have the u32 error discriminant and know which contract produced it:
+
 ```typescript
-// RPC server down
-NetworkError: Failed to connect to RPC server: https://soroban-testnet.stellar.org
-  statusCode: undefined
-  cause: Error { code: 'ECONNREFUSED' }
+import { parseContractErrorByCode } from '@grainlify/contracts-sdk';
 
-// Server error
-NetworkError: RPC request failed with status 500
-  statusCode: 500
-  cause: Error { ... }
+const error = parseContractErrorByCode(4, 'bounty_escrow');
+// → ContractError { code: 'BOUNTY_NOT_FOUND', message: 'Bounty not found', contractErrorCode: 4 }
 ```
+
+### By error message string (fallback)
+
+Use `parseContractError()` when you only have a panic/error message:
+
+```typescript
+import { parseContractError } from '@grainlify/contracts-sdk';
+
+const error = parseContractError(new Error('BountyNotFound'));
+// → ContractError { code: 'BOUNTY_NOT_FOUND', message: 'Bounty not found' }
+```
+
+### In Go backend
+
+```go
+import "github.com/jagadeesh/grainlify/backend/internal/errors"
+
+msg := errors.ContractErrorMessage(errors.BountyEscrow, 4)
+// → "Bounty not found"
+
+name := errors.ContractErrorName(errors.Governance, 11)
+// → "AlreadyVoted"
+```
+
+---
 
 ## Error Handling Best Practices
 
-### 1. Validate Early
-
-The SDK validates inputs before making contract calls to fail fast:
-
-```typescript
-// This throws ValidationError immediately, no contract call made
-await client.lockProgramFunds(0n, keypair);
-```
-
-### 2. Handle Specific Error Types
+### Handle specific error types
 
 ```typescript
 try {
   await client.singlePayout(recipient, amount, keypair);
 } catch (error) {
   if (error instanceof ValidationError) {
-    // Fix input and retry
     console.error('Invalid input:', error.field, error.message);
   } else if (error instanceof ContractError) {
-    // Handle contract-specific errors
     switch (error.code) {
       case ContractErrorCode.NOT_INITIALIZED:
         // Initialize the program first
         break;
-      case ContractErrorCode.UNAUTHORIZED:
-        // Use correct keypair
+      case ContractErrorCode.BOUNTY_NOT_FOUND:
+        // Bounty doesn't exist
         break;
-      case ContractErrorCode.INSUFFICIENT_BALANCE:
-        // Lock more funds
+      case ContractErrorCode.GOV_ALREADY_VOTED:
+        // User already voted
         break;
     }
   } else if (error instanceof NetworkError) {
-    // Retry with backoff
     console.error('Network issue:', error.statusCode);
   }
 }
 ```
 
-### 3. Implement Retry Logic for Network Errors
+### Implement retry logic for network errors
 
 ```typescript
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  maxRetries: number = 3
-): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
   for (let i = 0; i < maxRetries; i++) {
     try {
       return await fn();
@@ -165,59 +202,38 @@ async function withRetry<T>(
   }
   throw new Error('Max retries exceeded');
 }
-
-// Usage
-const balance = await withRetry(() => client.getRemainingBalance());
 ```
 
-### 4. Log Errors Appropriately
+---
 
-```typescript
-try {
-  await client.batchPayout(recipients, amounts, keypair);
-} catch (error) {
-  if (error instanceof ValidationError) {
-    // User error - log at info level
-    logger.info('Validation failed', { field: error.field, message: error.message });
-  } else if (error instanceof ContractError) {
-    // Contract error - log at warning level
-    logger.warn('Contract error', { code: error.code, message: error.message });
-  } else if (error instanceof NetworkError) {
-    // Network error - log at error level
-    logger.error('Network error', { 
-      statusCode: error.statusCode, 
-      cause: error.cause?.message 
-    });
-  }
-}
-```
+## Testing
 
-## Testing Error Scenarios
+The SDK includes three test suites for error handling:
 
-The SDK includes comprehensive tests for all error paths:
+| Test file | Coverage |
+|---|---|
+| `src/__tests__/error-handling.test.ts` | Validation errors, original 8 contract error codes, error factory, type hierarchy |
+| `src/__tests__/error-mapping.test.ts` | **Complete mapping verification** — every enum value, every numeric look-up table, string parsing for all contracts, cross-layer consistency, count regression guards |
+| `src/__tests__/network-errors.test.ts` | Connection errors, HTTP status codes, error properties, retry scenarios |
 
-### Validation Error Tests
-- Empty/invalid addresses
-- Zero/negative amounts
-- Empty arrays
-- Array length mismatches
+The backend Go tests are at `internal/errors/contract_errors_test.go` and cover:
+- Completeness of every on-chain error code
+- Non-empty human-readable messages
+- Unknown code fallbacks
+- Specific message spot-checks
+- Count regression guards
 
-### Contract Error Tests
-- All contract error codes
-- Error message parsing
-- Error factory functions
+Run SDK tests: `cd contracts/sdk && npx jest`
+Run backend tests: `cd backend && go test ./internal/errors/...`
 
-### Network Error Tests
-- Connection failures (ECONNREFUSED, ETIMEDOUT)
-- HTTP status codes (400, 401, 404, 500, 503)
-- Error property preservation
-- Retry scenarios
+---
 
-See `src/__tests__/error-handling.test.ts` and `src/__tests__/network-errors.test.ts` for complete test coverage.
+## Adding New Errors
 
-## Future Enhancements
+When a new error variant is added to any contract:
 
-1. **Retry Middleware**: Built-in retry logic with exponential backoff
-2. **Error Telemetry**: Automatic error reporting and metrics
-3. **Custom Error Handlers**: Allow users to register custom error handlers
-4. **Error Recovery Suggestions**: Provide actionable suggestions for each error type
+1. **Contract**: Add the variant to the Rust enum
+2. **SDK `errors.ts`**: Add to `ContractErrorCode`, `CONTRACT_ERROR_MESSAGES`, the appropriate `*_ERROR_MAP`, and a string match in `parseContractError()`
+3. **Backend `contract_errors.go`**: Add to the appropriate map
+4. **Tests**: Update the authoritative discriminant lists and count assertions in both `error-mapping.test.ts` and `contract_errors_test.go`
+5. **This document**: Add a row to the relevant table above

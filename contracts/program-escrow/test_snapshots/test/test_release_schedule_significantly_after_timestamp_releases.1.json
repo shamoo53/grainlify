@@ -60,9 +60,6 @@
               "function_name": "create_program_release_schedule",
               "args": [
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
-                },
-                {
                   "i128": {
                     "hi": 0,
                     "lo": 30000
@@ -70,6 +67,9 @@
                 },
                 {
                   "u64": 60
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 }
               ]
             }
@@ -294,6 +294,14 @@
                       },
                       {
                         "key": {
+                          "symbol": "ReentGrd"
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
                           "symbol": "RelHist"
                         },
                         "val": {
@@ -317,6 +325,18 @@
                                   },
                                   "val": {
                                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "release_type"
+                                  },
+                                  "val": {
+                                    "vec": [
+                                      {
+                                        "symbol": "Automatic"
+                                      }
+                                    ]
                                   }
                                 },
                                 {
@@ -381,6 +401,22 @@
                                   },
                                   "val": {
                                     "bool": true
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "released_at"
+                                  },
+                                  "val": {
+                                    "u64": 10000
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "released_by"
+                                  },
+                                  "val": {
+                                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
                                   }
                                 },
                                 {
@@ -1361,9 +1397,6 @@
             "data": {
               "vec": [
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
-                },
-                {
                   "i128": {
                     "hi": 0,
                     "lo": 30000
@@ -1371,6 +1404,9 @@
                 },
                 {
                   "u64": 60
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 }
               ]
             }
@@ -1430,6 +1466,18 @@
                   "val": {
                     "bool": false
                   }
+                },
+                {
+                  "key": {
+                    "symbol": "released_at"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
+                    "symbol": "released_by"
+                  },
+                  "val": "void"
                 },
                 {
                   "key": {

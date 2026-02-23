@@ -60,9 +60,6 @@
               "function_name": "create_program_release_schedule",
               "args": [
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
-                },
-                {
                   "i128": {
                     "hi": 0,
                     "lo": 20000
@@ -70,6 +67,9 @@
                 },
                 {
                   "u64": 80
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 }
               ]
             }
@@ -263,6 +263,14 @@
                       },
                       {
                         "key": {
+                          "symbol": "ReentGrd"
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
                           "symbol": "RelHist"
                         },
                         "val": {
@@ -311,6 +319,18 @@
                                   "val": {
                                     "bool": false
                                   }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "released_at"
+                                  },
+                                  "val": "void"
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "released_by"
+                                  },
+                                  "val": "void"
                                 },
                                 {
                                   "key": {
@@ -1217,9 +1237,6 @@
             "data": {
               "vec": [
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
-                },
-                {
                   "i128": {
                     "hi": 0,
                     "lo": 20000
@@ -1227,6 +1244,9 @@
                 },
                 {
                   "u64": 80
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 }
               ]
             }
@@ -1286,6 +1306,18 @@
                   "val": {
                     "bool": false
                   }
+                },
+                {
+                  "key": {
+                    "symbol": "released_at"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
+                    "symbol": "released_by"
+                  },
+                  "val": "void"
                 },
                 {
                   "key": {
@@ -1416,7 +1448,7 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "get_program_release_schedules"
+                "symbol": "get_release_schedules"
               }
             ],
             "data": "void"
@@ -1437,7 +1469,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "get_program_release_schedules"
+                "symbol": "get_release_schedules"
               }
             ],
             "data": {
@@ -1478,6 +1510,18 @@
                       "val": {
                         "bool": false
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "released_at"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "released_by"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {
