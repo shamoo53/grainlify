@@ -1,12 +1,14 @@
-export { ProgramEscrowClient } from './program-escrow-client';
-export type { 
-  ProgramEscrowConfig, 
-  ProgramData, 
+export { ProgramEscrowClient, fetchAllPages } from "./program-escrow-client";
+export type {
+  ProgramEscrowConfig,
+  ProgramData,
   PayoutRecord,
-  ProgramReleaseSchedule 
-} from './program-escrow-client';
+  ProgramReleaseSchedule,
+  PayoutQueryFilter,
+  ScheduleQueryFilter,
+} from "./program-escrow-client";
 
-export { 
+export {
   SDKError,
   ContractError,
   NetworkError,
