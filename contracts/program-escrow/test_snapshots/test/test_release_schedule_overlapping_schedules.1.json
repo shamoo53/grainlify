@@ -60,9 +60,6 @@
               "function_name": "create_program_release_schedule",
               "args": [
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
-                },
-                {
                   "i128": {
                     "hi": 0,
                     "lo": 10000
@@ -70,6 +67,9 @@
                 },
                 {
                   "u64": 50
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 }
               ]
             }
@@ -87,9 +87,6 @@
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
               "function_name": "create_program_release_schedule",
               "args": [
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
-                },
                 {
                   "i128": {
                     "hi": 0,
@@ -98,6 +95,9 @@
                 },
                 {
                   "u64": 50
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
                 }
               ]
             }
@@ -116,9 +116,6 @@
               "function_name": "create_program_release_schedule",
               "args": [
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
-                },
-                {
                   "i128": {
                     "hi": 0,
                     "lo": 20000
@@ -126,6 +123,9 @@
                 },
                 {
                   "u64": 120
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
                 }
               ]
             }
@@ -288,6 +288,17 @@
                             },
                             {
                               "key": {
+                                "symbol": "initial_liquidity"
+                              },
+                              "val": {
+                                "i128": {
+                                  "hi": 0,
+                                  "lo": 0
+                                }
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "payout_history"
                               },
                               "val": {
@@ -431,6 +442,14 @@
                       },
                       {
                         "key": {
+                          "symbol": "ReentGrd"
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
                           "symbol": "RelHist"
                         },
                         "val": {
@@ -454,6 +473,18 @@
                                   },
                                   "val": {
                                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "release_type"
+                                  },
+                                  "val": {
+                                    "vec": [
+                                      {
+                                        "symbol": "Automatic"
+                                      }
+                                    ]
                                   }
                                 },
                                 {
@@ -497,6 +528,18 @@
                                 },
                                 {
                                   "key": {
+                                    "symbol": "release_type"
+                                  },
+                                  "val": {
+                                    "vec": [
+                                      {
+                                        "symbol": "Automatic"
+                                      }
+                                    ]
+                                  }
+                                },
+                                {
+                                  "key": {
                                     "symbol": "released_at"
                                   },
                                   "val": {
@@ -532,6 +575,18 @@
                                   },
                                   "val": {
                                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "release_type"
+                                  },
+                                  "val": {
+                                    "vec": [
+                                      {
+                                        "symbol": "Automatic"
+                                      }
+                                    ]
                                   }
                                 },
                                 {
@@ -600,6 +655,22 @@
                                 },
                                 {
                                   "key": {
+                                    "symbol": "released_at"
+                                  },
+                                  "val": {
+                                    "u64": 50
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "released_by"
+                                  },
+                                  "val": {
+                                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                                  }
+                                },
+                                {
+                                  "key": {
                                     "symbol": "schedule_id"
                                   },
                                   "val": {
@@ -647,6 +718,22 @@
                                 },
                                 {
                                   "key": {
+                                    "symbol": "released_at"
+                                  },
+                                  "val": {
+                                    "u64": 50
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "released_by"
+                                  },
+                                  "val": {
+                                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                                  }
+                                },
+                                {
+                                  "key": {
                                     "symbol": "schedule_id"
                                   },
                                   "val": {
@@ -690,6 +777,22 @@
                                   },
                                   "val": {
                                     "bool": true
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "released_at"
+                                  },
+                                  "val": {
+                                    "u64": 120
+                                  }
+                                },
+                                {
+                                  "key": {
+                                    "symbol": "released_by"
+                                  },
+                                  "val": {
+                                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
                                   }
                                 },
                                 {
@@ -1489,7 +1592,11 @@
                 },
                 {
                   "address": "CCABDO7UZXYE4W6GVSEGSNNZTKSLFQGKXXQTH6OX7M7GKZ4Z6CUJNGZN"
-                }
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                },
+                "void"
               ]
             }
           }
@@ -1584,6 +1691,17 @@
                   },
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "initial_liquidity"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 0
+                    }
                   }
                 },
                 {
@@ -1843,6 +1961,17 @@
                 },
                 {
                   "key": {
+                    "symbol": "initial_liquidity"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 0
+                    }
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "payout_history"
                   },
                   "val": {
@@ -1915,9 +2044,6 @@
             "data": {
               "vec": [
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
-                },
-                {
                   "i128": {
                     "hi": 0,
                     "lo": 10000
@@ -1925,6 +2051,9 @@
                 },
                 {
                   "u64": 50
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 }
               ]
             }
@@ -1987,6 +2116,18 @@
                 },
                 {
                   "key": {
+                    "symbol": "released_at"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
+                    "symbol": "released_by"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
                     "symbol": "schedule_id"
                   },
                   "val": {
@@ -2021,9 +2162,6 @@
             "data": {
               "vec": [
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
-                },
-                {
                   "i128": {
                     "hi": 0,
                     "lo": 15000
@@ -2031,6 +2169,9 @@
                 },
                 {
                   "u64": 50
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
                 }
               ]
             }
@@ -2093,6 +2234,18 @@
                 },
                 {
                   "key": {
+                    "symbol": "released_at"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
+                    "symbol": "released_by"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
                     "symbol": "schedule_id"
                   },
                   "val": {
@@ -2127,9 +2280,6 @@
             "data": {
               "vec": [
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
-                },
-                {
                   "i128": {
                     "hi": 0,
                     "lo": 20000
@@ -2137,6 +2287,9 @@
                 },
                 {
                   "u64": 120
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
                 }
               ]
             }
@@ -2196,6 +2349,18 @@
                   "val": {
                     "bool": false
                   }
+                },
+                {
+                  "key": {
+                    "symbol": "released_at"
+                  },
+                  "val": "void"
+                },
+                {
+                  "key": {
+                    "symbol": "released_by"
+                  },
+                  "val": "void"
                 },
                 {
                   "key": {
@@ -2854,6 +3019,18 @@
                     },
                     {
                       "key": {
+                        "symbol": "release_type"
+                      },
+                      "val": {
+                        "vec": [
+                          {
+                            "symbol": "Automatic"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "released_at"
                       },
                       "val": {
@@ -2893,6 +3070,18 @@
                     },
                     {
                       "key": {
+                        "symbol": "release_type"
+                      },
+                      "val": {
+                        "vec": [
+                          {
+                            "symbol": "Automatic"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "released_at"
                       },
                       "val": {
@@ -2928,6 +3117,18 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "release_type"
+                      },
+                      "val": {
+                        "vec": [
+                          {
+                            "symbol": "Automatic"
+                          }
+                        ]
                       }
                     },
                     {

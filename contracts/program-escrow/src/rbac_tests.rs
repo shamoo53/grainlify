@@ -2,19 +2,18 @@
 
 use super::*;
 use soroban_sdk::{
-    testutils::Address as _,
-    Address, Env, String,
+    testutils::{Address as _, MockAuth, MockAuthInvoke},
+    Address, Env, IntoVal, String,
 };
 
 struct RbacSetup<'a> {
     env: Env,
+    contract_id: Address,
     admin: Address,
     operator: Address,
     pauser: Address,
-    random: Address,
+    outsider: Address,
     client: ProgramEscrowContractClient<'a>,
-    token_address: Address,
-    program_id: String,
 }
 
 impl<'a> RbacSetup<'a> {
@@ -26,7 +25,7 @@ impl<'a> RbacSetup<'a> {
         let admin = Address::generate(&env);
         let operator = Address::generate(&env);
         let pauser = Address::generate(&env);
-        let random = Address::generate(&env);
+        let outsider = Address::generate(&env);
 
         let token_admin = Address::generate(&env);
         let token_id = env.register_stellar_asset_contract_v2(token_admin.clone()).address();
@@ -46,75 +45,102 @@ impl<'a> RbacSetup<'a> {
 
         Self {
             env,
+            contract_id,
             admin,
             operator,
             pauser,
-            random,
+            outsider,
             client,
-            token_address: token_id,
-            program_id,
         }
     }
 }
 
-// ─────────────────────────────────────────────────────────
-// Admin Role Tests
-// ─────────────────────────────────────────────────────────
-
 #[test]
-fn test_admin_permissions() {
+fn test_admin_can_set_pause_flags() {
     let setup = RbacSetup::new();
-    
-    // Admin should be able to pause/unpause
-    setup.env.mock_all_auths();
-    setup.client.set_paused(&Some(true), &None, &None);
+    setup.env.mock_auths(&[MockAuth {
+        address: &setup.admin,
+        invoke: &MockAuthInvoke {
+            contract: &setup.contract_id,
+            fn_name: "set_paused",
+            args: (
+                Some(true),
+                Option::<bool>::None,
+                Option::<bool>::None,
+                Option::<String>::None,
+            )
+                .into_val(&setup.env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    setup.client.set_paused(&Some(true), &None, &None, &None);
     assert!(setup.client.get_pause_flags().lock_paused);
 }
 
 #[test]
 #[should_panic]
-fn test_random_cannot_pause() {
+fn test_non_admin_cannot_set_pause_flags() {
     let setup = RbacSetup::new();
-    setup.client.set_paused(&Some(true), &None, &None);
-    // This should panic because the default caller in Soroban tests (without mock_all_auths) 
-    // will be unauthorized if it hasn't call setup.env.mock_all_auths() or provided auth.
+
+    setup.env.mock_auths(&[MockAuth {
+        address: &setup.outsider,
+        invoke: &MockAuthInvoke {
+            contract: &setup.contract_id,
+            fn_name: "set_paused",
+            args: (
+                Some(true),
+                Option::<bool>::None,
+                Option::<bool>::None,
+                Option::<String>::None,
+            )
+                .into_val(&setup.env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    setup.client.set_paused(&Some(true), &None, &None, &None);
 }
 
-// ─────────────────────────────────────────────────────────
-// Operator Role Tests
-// ─────────────────────────────────────────────────────────
-
 #[test]
-fn test_operator_permissions() {
+fn test_operator_can_trigger_program_releases() {
     let setup = RbacSetup::new();
-    setup.env.mock_all_auths();
+    setup.env.mock_auths(&[MockAuth {
+        address: &setup.operator,
+        invoke: &MockAuthInvoke {
+            contract: &setup.contract_id,
+            fn_name: "trigger_program_releases",
+            args: ().into_val(&setup.env),
+            sub_invokes: &[],
+        },
+    }]);
 
-    // Operator should be able to trigger releases
-    setup.client.trigger_program_releases();
+    assert_eq!(setup.client.trigger_program_releases(), 0);
 }
 
 #[test]
 #[should_panic]
 fn test_admin_cannot_trigger_releases() {
     let setup = RbacSetup::new();
-    // No mock_all_auths()
-    
-    // Admin is not the operator
-    setup.admin.require_auth();
+    setup.env.mock_auths(&[MockAuth {
+        address: &setup.admin,
+        invoke: &MockAuthInvoke {
+            contract: &setup.contract_id,
+            fn_name: "trigger_program_releases",
+            args: ().into_val(&setup.env),
+            sub_invokes: &[],
+        },
+    }]);
+
     setup.client.trigger_program_releases();
 }
 
-// ─────────────────────────────────────────────────────────
-// Pauser Role Tests
-// ─────────────────────────────────────────────────────────
-
 #[test]
-fn test_pauser_permissions() {
+fn test_pauser_can_reset_and_configure_circuit_breaker() {
     let setup = RbacSetup::new();
     setup.env.mock_all_auths();
-
-    // Pauser should be able to reset/configure circuit breaker
     setup.client.reset_circuit_breaker(&setup.pauser);
+
     setup.client.configure_circuit_breaker(&setup.pauser, &5, &2, &20);
 }
 
@@ -122,9 +148,16 @@ fn test_pauser_permissions() {
 #[should_panic]
 fn test_admin_cannot_reset_circuit() {
     let setup = RbacSetup::new();
-    setup.env.mock_all_auths();
-    
-    // Even admin cannot reset circuit if they aren't the registered pauser
+    setup.env.mock_auths(&[MockAuth {
+        address: &setup.admin,
+        invoke: &MockAuthInvoke {
+            contract: &setup.contract_id,
+            fn_name: "reset_circuit_breaker",
+            args: (setup.admin.clone(),).into_val(&setup.env),
+            sub_invokes: &[],
+        },
+    }]);
+
     setup.client.reset_circuit_breaker(&setup.admin);
 }
 
@@ -132,8 +165,134 @@ fn test_admin_cannot_reset_circuit() {
 #[should_panic]
 fn test_operator_cannot_reset_circuit() {
     let setup = RbacSetup::new();
-    setup.env.mock_all_auths();
-    
-    // Operator cannot reset circuit
+    setup.env.mock_auths(&[MockAuth {
+        address: &setup.operator,
+        invoke: &MockAuthInvoke {
+            contract: &setup.contract_id,
+            fn_name: "reset_circuit_breaker",
+            args: (setup.operator.clone(),).into_val(&setup.env),
+            sub_invokes: &[],
+        },
+    }]);
+
     setup.client.reset_circuit_breaker(&setup.operator);
+}
+
+#[test]
+#[should_panic]
+fn test_pauser_cannot_set_pause_flags() {
+    let setup = RbacSetup::new();
+    setup.env.mock_auths(&[MockAuth {
+        address: &setup.pauser,
+        invoke: &MockAuthInvoke {
+            contract: &setup.contract_id,
+            fn_name: "set_paused",
+            args: (
+                Some(true),
+                Option::<bool>::None,
+                Option::<bool>::None,
+                Option::<String>::None,
+            )
+                .into_val(&setup.env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    setup.client.set_paused(&Some(true), &None, &None, &None);
+}
+
+#[test]
+fn test_circuit_admin_can_rotate_assignment() {
+    let setup = RbacSetup::new();
+    let new_pauser = Address::generate(&setup.env);
+
+    setup.env.mock_auths(&[MockAuth {
+        address: &setup.pauser,
+        invoke: &MockAuthInvoke {
+            contract: &setup.contract_id,
+            fn_name: "set_circuit_admin",
+            args: (new_pauser.clone(), Some(setup.pauser.clone())).into_val(&setup.env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    setup
+        .client
+        .set_circuit_admin(&new_pauser, &Some(setup.pauser.clone()));
+
+    assert_eq!(setup.client.get_circuit_admin(), Some(new_pauser));
+}
+
+#[test]
+#[should_panic]
+fn test_non_circuit_admin_cannot_rotate_assignment() {
+    let setup = RbacSetup::new();
+    let new_pauser = Address::generate(&setup.env);
+
+    setup.env.mock_auths(&[MockAuth {
+        address: &setup.outsider,
+        invoke: &MockAuthInvoke {
+            contract: &setup.contract_id,
+            fn_name: "set_circuit_admin",
+            args: (new_pauser.clone(), Some(setup.pauser.clone())).into_val(&setup.env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    setup
+        .client
+        .set_circuit_admin(&new_pauser, &Some(setup.pauser.clone()));
+}
+
+#[test]
+#[should_panic]
+fn test_old_circuit_admin_cannot_reset_after_rotation() {
+    let setup = RbacSetup::new();
+    let new_pauser = Address::generate(&setup.env);
+
+    setup.env.mock_auths(&[MockAuth {
+        address: &setup.pauser,
+        invoke: &MockAuthInvoke {
+            contract: &setup.contract_id,
+            fn_name: "set_circuit_admin",
+            args: (new_pauser.clone(), Some(setup.pauser.clone())).into_val(&setup.env),
+            sub_invokes: &[],
+        },
+    }]);
+    setup
+        .client
+        .set_circuit_admin(&new_pauser, &Some(setup.pauser.clone()));
+
+    setup.env.mock_auths(&[MockAuth {
+        address: &setup.pauser,
+        invoke: &MockAuthInvoke {
+            contract: &setup.contract_id,
+            fn_name: "reset_circuit_breaker",
+            args: (setup.pauser.clone(),).into_val(&setup.env),
+            sub_invokes: &[],
+        },
+    }]);
+    setup.client.reset_circuit_breaker(&setup.pauser);
+}
+
+#[test]
+fn test_new_circuit_admin_can_reset_after_rotation() {
+    let setup = RbacSetup::new();
+    let new_pauser = Address::generate(&setup.env);
+
+    setup.env.mock_auths(&[MockAuth {
+        address: &setup.pauser,
+        invoke: &MockAuthInvoke {
+            contract: &setup.contract_id,
+            fn_name: "set_circuit_admin",
+            args: (new_pauser.clone(), Some(setup.pauser.clone())).into_val(&setup.env),
+            sub_invokes: &[],
+        },
+    }]);
+    setup
+        .client
+        .set_circuit_admin(&new_pauser, &Some(setup.pauser.clone()));
+
+    setup.env.mock_all_auths();
+    setup.client.reset_circuit_breaker(&new_pauser);
 }

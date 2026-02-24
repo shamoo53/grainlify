@@ -150,7 +150,7 @@ fn test_uninitialized_create_schedule_rejected() {
     env.mock_all_auths();
     let (client, _cid) = make_client(&env);
     let r = Address::generate(&env);
-    client.create_program_release_schedule(&r, &100, &1000);
+    client.create_program_release_schedule(&100, &1000, &r);
 }
 
 #[test]
@@ -714,7 +714,7 @@ fn test_schedule_before_timestamp_not_triggered() {
     let recipient = Address::generate(&env);
 
     let now = env.ledger().timestamp();
-    client.create_program_release_schedule(&recipient, &30_000, &(now + 500));
+    client.create_program_release_schedule(&30_000, &(now + 500), &recipient);
 
     // Trigger at t < release_timestamp — should release 0 schedules
     env.ledger().set_timestamp(now + 499);
@@ -731,7 +731,7 @@ fn test_schedule_triggered_at_exact_timestamp() {
     let recipient = Address::generate(&env);
 
     let now = env.ledger().timestamp();
-    client.create_program_release_schedule(&recipient, &25_000, &(now + 200));
+    client.create_program_release_schedule(&25_000, &(now + 200), &recipient);
 
     env.ledger().set_timestamp(now + 200);
     let count = client.trigger_program_releases();
@@ -748,7 +748,7 @@ fn test_schedule_not_released_twice() {
     let recipient = Address::generate(&env);
 
     let now = env.ledger().timestamp();
-    client.create_program_release_schedule(&recipient, &20_000, &(now + 100));
+    client.create_program_release_schedule(&20_000, &(now + 100), &recipient);
 
     env.ledger().set_timestamp(now + 100);
     let count1 = client.trigger_program_releases();
@@ -770,9 +770,9 @@ fn test_multiple_schedules_same_timestamp_all_released() {
     let r3 = Address::generate(&env);
 
     let now = env.ledger().timestamp();
-    client.create_program_release_schedule(&r1, &10_000, &(now + 50));
-    client.create_program_release_schedule(&r2, &15_000, &(now + 50));
-    client.create_program_release_schedule(&r3, &20_000, &(now + 50));
+    client.create_program_release_schedule(&10_000, &(now + 50), &r1);
+    client.create_program_release_schedule(&15_000, &(now + 50), &r2);
+    client.create_program_release_schedule(&20_000, &(now + 50), &r3);
 
     env.ledger().set_timestamp(now + 50);
     let count = client.trigger_program_releases();

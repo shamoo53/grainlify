@@ -1578,4 +1578,8 @@ mod test {
         assert_eq!(state.from_version, v_before);
         assert_eq!(state.to_version, 3);
     }
+
 }
+
+#[cfg(test)]
+mod migration_hook_tests;
