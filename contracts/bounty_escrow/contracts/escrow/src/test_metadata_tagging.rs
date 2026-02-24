@@ -98,5 +98,4 @@ fn test_query_filters_on_large_dataset() {
 fn test_tagging_logic_verification() {
     // This test is for future metadata tagging functionality
     // Currently the contract doesn't support metadata/tagging
- 
 }

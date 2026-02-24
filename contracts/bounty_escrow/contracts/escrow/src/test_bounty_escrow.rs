@@ -1,4 +1,3 @@
-
 use crate::{BountyEscrowContract, BountyEscrowContractClient, Error as ContractError};
 use soroban_sdk::testutils::Events;
 use soroban_sdk::{

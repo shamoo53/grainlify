@@ -189,7 +189,7 @@ fn test_query_by_amount_range_returns_matching_escrows() {
     assert_eq!(results.len(), 2);
     for i in 0..results.len() {
         let amt = results.get(i).unwrap().escrow.amount;
-       assert!((400..=1100).contains(&amt));
+        assert!((400..=1100).contains(&amt));
     }
 }
 

@@ -39,7 +39,7 @@ fn test_granular_pause_lock() {
     escrow_client.init(&admin, &token_client.address);
 
     let flags = escrow_client.get_pause_flags();
-    assert!(!flags.lock_paused );
+    assert!(!flags.lock_paused);
     assert!(!flags.release_paused);
     assert!(!flags.refund_paused);
 
