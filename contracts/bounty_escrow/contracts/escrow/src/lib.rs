@@ -24,7 +24,7 @@ use events::{
 };
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, token, vec, Address, Env,
-    Symbol, Vec,
+    String, Symbol, Vec,
 };
 
 mod monitoring {

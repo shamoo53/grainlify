@@ -160,10 +160,11 @@ mod multisig;
 pub use governance::{
     Error as GovError, GovernanceConfig, Proposal, ProposalStatus, Vote, VoteType, VotingScheme,
 };
-use multisig::MultiSig;
+// use multisig::MultiSig; // Currently unused - uncomment when needed
 #[cfg(feature = "contract")]
 use soroban_sdk::{contract, contractimpl};
-use soroban_sdk::{contracttype, symbol_short, Address, BytesN, Env, String, Symbol, Vec};
+// use soroban_sdk::{contracttype, symbol_short, Address, BytesN, Env, String, Symbol, Vec}; // Some imports currently unused
+use soroban_sdk::{contracttype, symbol_short, BytesN, Env, String, Symbol};
 
 // ==================== MONITORING MODULE ====================
 mod monitoring {
