@@ -453,6 +453,12 @@ pub enum DataKey {
     AmountPolicy, // Option<(i128, i128)> — (min_amount, max_amount) set by set_amount_policy
     CapabilityNonce, // monotonically increasing capability id
     Capability(u64), // capability_id -> Capability
+    
+    /// Chain identifier (e.g., "stellar", "ethereum") for cross-network protection
+    ChainId,
+    
+    /// Network identifier (e.g., "mainnet", "testnet", "futurenet") for environment-specific behavior
+    NetworkId,
 }
 
 #[contracttype]
@@ -641,6 +647,56 @@ impl BountyEscrowContract {
         env.storage()
             .instance()
             .set(&DataKey::Token, &normalized_token);
+
+        emit_bounty_initialized(
+            &env,
+            BountyEscrowInitialized {
+                version: EVENT_VERSION_V2,
+                admin,
+                token: normalized_token,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Initialize the contract with admin, token, and network configuration.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `admin` - Address authorized to perform administrative functions
+    /// * `token` - Token address for escrow operations
+    /// * `chain_id` - Chain identifier (e.g., "stellar", "ethereum")
+    /// * `network_id` - Network identifier (e.g., "mainnet", "testnet", "futurenet")
+    ///
+    /// # Security Considerations
+    /// - Chain and network IDs are immutable after initialization
+    /// - These values prevent cross-network replay attacks
+    /// - Should match the actual deployment environment
+    pub fn init_with_network(
+        env: Env,
+        admin: Address,
+        token: asset::AssetId,
+        chain_id: String,
+        network_id: String,
+    ) -> Result<(), Error> {
+        if env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::AlreadyInitialized);
+        }
+        
+        let normalized_token =
+            asset::normalize_asset_id(&env, &token).map_err(|_| Error::InvalidAssetId)?;
+        
+        // Store admin and token
+        env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage()
+            .instance()
+            .set(&DataKey::Token, &normalized_token);
+        
+        // Store chain and network identifiers
+        env.storage().instance().set(&DataKey::ChainId, &chain_id);
+        env.storage().instance().set(&DataKey::NetworkId, &network_id);
 
         emit_bounty_initialized(
             &env,
@@ -1214,6 +1270,57 @@ impl BountyEscrowContract {
     /// Get current fee configuration (view function)
     pub fn get_fee_config(env: Env) -> FeeConfig {
         Self::get_fee_config_internal(&env)
+    }
+
+    /// Retrieves the chain identifier.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    ///
+    /// # Returns
+    /// * `Option<String>` - Chain identifier if set, None if not initialized with network config
+    ///
+    /// # Usage
+    /// Use this to verify the chain environment for:
+    /// - Cross-network protection
+    /// - Replay attack prevention
+    /// - Environment-specific behavior
+    pub fn get_chain_id(env: Env) -> Option<String> {
+        env.storage().instance().get(&DataKey::ChainId)
+    }
+
+    /// Retrieves the network identifier.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    ///
+    /// # Returns
+    /// * `Option<String>` - Network identifier if set, None if not initialized with network config
+    ///
+    /// # Usage
+    /// Use this to verify the network environment for:
+    /// - Environment-specific behavior
+    /// - Testnet vs mainnet differentiation
+    /// - Safe replay protection
+    pub fn get_network_id(env: Env) -> Option<String> {
+        env.storage().instance().get(&DataKey::NetworkId)
+    }
+
+    /// Gets both chain and network identifiers as a tuple.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    ///
+    /// # Returns
+    /// * `(Option<String>, Option<String>)` - Tuple of (chain_id, network_id)
+    ///
+    /// # Usage
+    /// Convenience function to get both identifiers in one call.
+    pub fn get_network_info(env: Env) -> (Option<String>, Option<String>) {
+        (
+            env.storage().instance().get(&DataKey::ChainId),
+            env.storage().instance().get(&DataKey::NetworkId),
+        )
     }
 
     /// Update multisig configuration (admin only)

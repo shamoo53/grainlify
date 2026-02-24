@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod test {
-    use super::monitoring;
-    use crate::{DataKey, GrainlifyContract, GrainlifyContractClient};
+    use crate::{monitoring, DataKey, GrainlifyContract, GrainlifyContractClient};
     use soroban_sdk::{testutils::Address as _, Address, Env, Symbol};
 
     fn setup_test(env: &Env) -> (GrainlifyContractClient, Address) {

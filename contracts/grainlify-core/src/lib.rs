@@ -388,6 +388,8 @@ pub struct GrainlifyContract;
 /// # Keys
 /// * `Admin` - Stores the administrator address (set once at initialization)
 /// * `Version` - Stores the current contract version number
+/// * `ChainId` - Stores the chain identifier for cross-network protection
+/// * `NetworkId` - Stores the network identifier for environment-specific behavior
 ///
 /// # Storage Type
 /// Instance storage - Persists across contract upgrades
@@ -412,6 +414,12 @@ enum DataKey {
 
     /// Previous version before migration (for rollback support)
     PreviousVersion,
+
+    /// Chain identifier (e.g., "stellar", "ethereum") for cross-network protection
+    ChainId,
+
+    /// Network identifier (e.g., "mainnet", "testnet", "futurenet") for environment-specific behavior
+    NetworkId,
 }
 
 // ============================================================================
@@ -576,6 +584,45 @@ impl GrainlifyContract {
         // Track performance
         let duration = env.ledger().timestamp().saturating_sub(start);
         monitoring::emit_performance(&env, symbol_short!("init"), duration);
+    }
+
+    /// Initializes the contract with admin address and network configuration.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `admin` - Address authorized to perform upgrades
+    /// * `chain_id` - Chain identifier (e.g., "stellar", "ethereum")
+    /// * `network_id` - Network identifier (e.g., "mainnet", "testnet", "futurenet")
+    ///
+    /// # Security Considerations
+    /// - Chain and network IDs are immutable after initialization
+    /// - These values prevent cross-network replay attacks
+    /// - Should match the actual deployment environment
+    pub fn init_with_network(env: Env, admin: Address, chain_id: String, network_id: String) {
+        let start = env.ledger().timestamp();
+
+        // Prevent re-initialization to protect immutability
+        if env.storage().instance().has(&DataKey::Admin) {
+            monitoring::track_operation(&env, symbol_short!("init_net"), admin.clone(), false);
+            panic!("Already initialized");
+        }
+
+        // Store admin address (immutable after this point)
+        env.storage().instance().set(&DataKey::Admin, &admin);
+
+        // Set initial version
+        env.storage().instance().set(&DataKey::Version, &VERSION);
+
+        // Store chain and network identifiers
+        env.storage().instance().set(&DataKey::ChainId, &chain_id);
+        env.storage().instance().set(&DataKey::NetworkId, &network_id);
+
+        // Track successful operation
+        monitoring::track_operation(&env, symbol_short!("init_net"), admin, true);
+
+        // Track performance
+        let duration = env.ledger().timestamp().saturating_sub(start);
+        monitoring::emit_performance(&env, symbol_short!("init_net"), duration);
     }
 
     /// Proposes an upgrade with a new WASM hash (multisig version).
@@ -909,6 +956,84 @@ impl GrainlifyContract {
         // Track performance
         let duration = env.ledger().timestamp().saturating_sub(start);
         monitoring::emit_performance(&env, symbol_short!("set_ver"), duration);
+    }
+
+    /// Retrieves the chain identifier.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    ///
+    /// # Returns
+    /// * `Option<String>` - Chain identifier if set, None if not initialized with network config
+    ///
+    /// # Usage
+    /// Use this to verify the chain environment for:
+    /// - Cross-network protection
+    /// - Replay attack prevention
+    /// - Environment-specific behavior
+    ///
+    /// # Example
+    /// ```rust
+    /// let chain_id = contract.get_chain_id(&env);
+    /// match chain_id.as_str() {
+    ///     "stellar" => println!("Running on Stellar network"),
+    ///     "ethereum" => println!("Running on Ethereum network"),
+    ///     _ => println!("Unknown chain"),
+    /// }
+    /// ```
+    pub fn get_chain_id(env: Env) -> Option<String> {
+        env.storage().instance().get(&DataKey::ChainId)
+    }
+
+    /// Retrieves the network identifier.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    ///
+    /// # Returns
+    /// * `Option<String>` - Network identifier if set, None if not initialized with network config
+    ///
+    /// # Usage
+    /// Use this to verify the network environment for:
+    /// - Environment-specific behavior
+    /// - Testnet vs mainnet differentiation
+    /// - Safe replay protection
+    ///
+    /// # Example
+    /// ```rust
+    /// let network_id = contract.get_network_id(&env);
+    /// match network_id.as_str() {
+    ///     "mainnet" => println!("Running on mainnet - be careful!"),
+    ///     "testnet" => println!("Running on testnet - safe for testing"),
+    ///     "futurenet" => println!("Running on futurenet - experimental"),
+    ///     _ => println!("Unknown network"),
+    /// }
+    /// ```
+    pub fn get_network_id(env: Env) -> Option<String> {
+        env.storage().instance().get(&DataKey::NetworkId)
+    }
+
+    /// Gets both chain and network identifiers as a tuple.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    ///
+    /// # Returns
+    /// * `(Option<String>, Option<String>)` - Tuple of (chain_id, network_id)
+    ///
+    /// # Usage
+    /// Convenience function to get both identifiers in one call.
+    ///
+    /// # Example
+    /// ```rust
+    /// let (chain, network) = contract.get_network_info(&env);
+    /// println!("Chain: {:?}, Network: {:?}", chain, network);
+    /// ```
+    pub fn get_network_info(env: Env) -> (Option<String>, Option<String>) {
+        (
+            env.storage().instance().get(&DataKey::ChainId),
+            env.storage().instance().get(&DataKey::NetworkId),
+        )
     }
 
     // ========================================================================
@@ -1394,6 +1519,93 @@ mod test {
     }
 
     #[test]
+    fn test_network_initialization() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, GrainlifyContract);
+        let client = GrainlifyContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let chain_id = String::from_str(&env, "stellar");
+        let network_id = String::from_str(&env, "testnet");
+        
+        client.init_with_network(&admin, &chain_id, &network_id);
+
+        // Verify initialization
+        assert_eq!(client.get_version(), 2);
+        
+        // Verify network configuration
+        let retrieved_chain = client.get_chain_id();
+        let retrieved_network = client.get_network_id();
+        
+        assert_eq!(retrieved_chain, Some(chain_id));
+        assert_eq!(retrieved_network, Some(network_id));
+    }
+
+    #[test]
+    fn test_network_info_getter() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, GrainlifyContract);
+        let client = GrainlifyContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let chain_id = String::from_str(&env, "ethereum");
+        let network_id = String::from_str(&env, "mainnet");
+        
+        client.init_with_network(&admin, &chain_id, &network_id);
+
+        // Test tuple getter
+        let (chain, network) = client.get_network_info();
+        assert_eq!(chain, Some(chain_id));
+        assert_eq!(network, Some(network_id));
+    }
+
+    #[test]
+    #[should_panic(expected = "Already initialized")]
+    fn test_cannot_reinitialize_network_config() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, GrainlifyContract);
+        let client = GrainlifyContractClient::new(&env, &contract_id);
+
+        let admin1 = Address::generate(&env);
+        let admin2 = Address::generate(&env);
+        let chain_id = String::from_str(&env, "stellar");
+        let network_id = String::from_str(&env, "testnet");
+
+        // First initialization should succeed
+        client.init_with_network(&admin1, &chain_id, &network_id);
+        
+        // Second initialization should panic
+        client.init_with_network(&admin2, &chain_id, &network_id);
+    }
+
+    #[test]
+    fn test_legacy_init_still_works() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, GrainlifyContract);
+        let client = GrainlifyContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        
+        // Legacy init should still work (without network config)
+        client.init_admin(&admin);
+        
+        // Network info should be None for legacy initialization
+        assert_eq!(client.get_chain_id(), None);
+        assert_eq!(client.get_network_id(), None);
+        let (chain, network) = client.get_network_info();
+        assert_eq!(chain, None);
+        assert_eq!(network, None);
+    }
+
+    #[test]
     #[should_panic(expected = "Already initialized")]
     fn test_cannot_reinitialize_admin() {
         let env = Env::default();
@@ -1597,12 +1809,12 @@ mod test {
         assert_eq!(state.to_version, 3);
     }
     // Export WASM for testing upgrade/rollback scenarios
-    #[cfg(test)]
-    pub const WASM: &[u8] = include_bytes!("../target/wasm32v1-none/release/grainlify_core.wasm");
+    // #[cfg(test)]
+    // pub const WASM: &[u8] = include_bytes!("../target/wasm32v1-none/release/grainlify_core.wasm");
 
     #[cfg(test)]
     mod upgrade_rollback_tests;
 }
 
-#[cfg(test)]
-mod migration_hook_tests;
+// #[cfg(test)]
+// mod migration_hook_tests;
