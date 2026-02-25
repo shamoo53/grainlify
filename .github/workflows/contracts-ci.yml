@@ -48,7 +48,7 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            contracts/bounty_escrow/contracts/escrow/target/
+            contracts/bounty_escrow/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('contracts/bounty_escrow/**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
@@ -86,7 +86,8 @@ jobs:
       - name: Stellar build check
         run: |
           source $HOME/.cargo/env
-          wasm_file="contracts/bounty_escrow/contracts/escrow/target/wasm32v1-none/release/bounty_escrow.wasm"
+          # Cargo puts target/ at the workspace root (contracts/bounty_escrow), not in contracts/escrow
+          wasm_file="contracts/bounty_escrow/target/wasm32v1-none/release/bounty_escrow.wasm"
           echo "Checking for generated WASM files..."
           if [ ! -f "$wasm_file" ]; then
             echo "Error: WASM file not found"
