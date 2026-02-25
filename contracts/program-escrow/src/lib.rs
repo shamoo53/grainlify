@@ -812,8 +812,18 @@ impl ProgramEscrowContract {
         env.storage().instance().set(&DataKey::Admin, &admin);
     }
 
+    /// Set or rotate admin. If no admin is set, sets initial admin. If admin exists, current admin must authorize and the new address becomes admin.
     pub fn set_admin(env: Env, admin: Address) {
-        Self::initialize_contract(env, admin);
+        if env.storage().instance().has(&DataKey::Admin) {
+            let current: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+            current.require_auth();
+        }
+        env.storage().instance().set(&DataKey::Admin, &admin);
+    }
+
+    /// Returns the current admin address, if set.
+    pub fn get_admin(env: Env) -> Option<Address> {
+        env.storage().instance().get(&DataKey::Admin)
     }
 
     pub fn get_program_release_schedules(env: Env) -> Vec<ProgramReleaseSchedule> {

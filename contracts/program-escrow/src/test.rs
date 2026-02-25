@@ -2,8 +2,8 @@
 
 use super::*;
 use soroban_sdk::{
-    testutils::{Address as _, Events, Ledger},
-    token, vec, Address, Env, Map, String, Symbol, TryFromVal, Val,
+    testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke},
+    token, vec, Address, Env, IntoVal, Map, String, Symbol, TryFromVal, Val,
 };
 
 fn setup_program(
@@ -648,6 +648,79 @@ fn test_anti_abuse_whitelist_bypass() {
 
     let info = client.get_program_info();
     assert_eq!(info.payout_history.len() as u32, max_ops + 5);
+}
+
+// =============================================================================
+// Admin rotation and config updates (Issue #465)
+// =============================================================================
+
+/// Admin can be set and rotated; new admin is persisted.
+#[test]
+fn test_admin_rotation() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+
+    env.mock_all_auths();
+
+    client.set_admin(&admin);
+    assert_eq!(client.get_admin(), Some(admin.clone()));
+
+    client.set_admin(&new_admin);
+    assert_eq!(client.get_admin(), Some(new_admin));
+}
+
+/// After admin rotation, new admin can update rate limit config.
+#[test]
+fn test_new_admin_can_update_config() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+
+    env.mock_all_auths();
+
+    client.set_admin(&admin);
+    client.set_admin(&new_admin);
+
+    client.update_rate_limit_config(&3600, &10, &30);
+
+    let config = client.get_rate_limit_config();
+    assert_eq!(config.window_size, 3600);
+    assert_eq!(config.max_operations, 10);
+    assert_eq!(config.cooldown_period, 30);
+}
+
+/// Non-admin cannot update rate limit config.
+#[test]
+#[should_panic]
+fn test_non_admin_cannot_update_config() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, ProgramEscrowContract);
+    let client = ProgramEscrowContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let non_admin = Address::generate(&env);
+
+    env.mock_all_auths();
+
+    client.set_admin(&admin);
+
+    // Mock only non_admin so that update_rate_limit_config sees non_admin as caller;
+    // contract requires admin.require_auth(), so this must panic.
+    env.mock_auths(&[MockAuth {
+        address: &non_admin,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "update_rate_limit_config",
+            args: (3600u64, 10u32, 30u64).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    client.update_rate_limit_config(&3600, &10, &30);
 }
 
 // =============================================================================

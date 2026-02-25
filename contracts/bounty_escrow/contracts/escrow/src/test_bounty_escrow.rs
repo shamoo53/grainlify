@@ -1,8 +1,8 @@
 use crate::{BountyEscrowContract, BountyEscrowContractClient, Error as ContractError};
 use soroban_sdk::testutils::Events;
 use soroban_sdk::{
-    testutils::{Address as _, Ledger},
-    token, Address, Env, Map, Symbol, TryFromVal, Val,
+    testutils::{Address as _, Ledger, MockAuth, MockAuthInvoke},
+    token, Address, Env, IntoVal, Map, Symbol, TryFromVal, Val,
 };
 
 fn create_test_env() -> (Env, BountyEscrowContractClient<'static>, Address) {
@@ -1234,4 +1234,190 @@ fn test_max_bounty_count_queries_accurate() {
     assert_eq!(mid.amount, 100);
     let last = client.get_escrow_info(&N);
     assert_eq!(last.amount, 100);
+}
+
+// =============================================================================
+// Rate limit and cooldown enforcement (Issue #460)
+// =============================================================================
+
+/// Exactly at rate limit: max_operations locks succeed; the next one panics with "Rate limit exceeded".
+#[test]
+#[should_panic(expected = "Rate limit exceeded")]
+fn test_anti_abuse_exact_rate_limit_then_exceeded() {
+    let (env, client, _) = create_test_env();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 10_000;
+
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token, _token_client, token_admin_client) = create_token_contract(&env, &token_admin);
+    client.init(&admin, &token);
+
+    // Strict config: 2 operations per window, 60s cooldown
+    client.update_anti_abuse_config(&3600, &2, &60);
+
+    token_admin_client.mint(&depositor, &10_000);
+
+    // Exactly 2 locks must succeed (different bounty_ids)
+    client.lock_funds(&depositor, &1, &100, &deadline);
+    client.lock_funds(&depositor, &2, &100, &deadline);
+
+    // Third lock in same window must panic
+    client.lock_funds(&depositor, &3, &100, &deadline);
+}
+
+/// Exactly at limit: max_operations locks succeed; no panic at the boundary.
+#[test]
+fn test_anti_abuse_exact_rate_limit_boundary_succeeds() {
+    let (env, client, _) = create_test_env();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 10_000;
+
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token, _token_client, token_admin_client) = create_token_contract(&env, &token_admin);
+    client.init(&admin, &token);
+
+    client.update_anti_abuse_config(&3600, &3, &60);
+
+    token_admin_client.mint(&depositor, &10_000);
+
+    client.lock_funds(&depositor, &1, &100, &deadline);
+    client.lock_funds(&depositor, &2, &100, &deadline);
+    client.lock_funds(&depositor, &3, &100, &deadline);
+
+    assert_eq!(client.get_escrow_count(), 3);
+}
+
+/// Rapid repeated lock within cooldown period must panic.
+#[test]
+#[should_panic(expected = "Operation in cooldown period")]
+fn test_anti_abuse_cooldown_violation_panics() {
+    let (env, client, _) = create_test_env();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let start = 1_000_000_u64;
+    env.ledger().set_timestamp(start);
+    let deadline = start + 10_000;
+
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token, _token_client, token_admin_client) = create_token_contract(&env, &token_admin);
+    client.init(&admin, &token);
+
+    // Cooldown 100s; we will do second lock at start+50 (within cooldown)
+    client.update_anti_abuse_config(&3600, &10, &100);
+
+    token_admin_client.mint(&depositor, &10_000);
+
+    client.lock_funds(&depositor, &1, &100, &deadline);
+
+    env.ledger().set_timestamp(start + 50);
+    client.lock_funds(&depositor, &2, &100, &deadline);
+}
+
+/// After cooldown period, next lock succeeds.
+#[test]
+fn test_anti_abuse_after_cooldown_succeeds() {
+    let (env, client, _) = create_test_env();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let start = 1_000_000_u64;
+    env.ledger().set_timestamp(start);
+    let deadline = start + 10_000;
+
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token, _token_client, token_admin_client) = create_token_contract(&env, &token_admin);
+    client.init(&admin, &token);
+
+    client.update_anti_abuse_config(&3600, &10, &60);
+
+    token_admin_client.mint(&depositor, &10_000);
+
+    client.lock_funds(&depositor, &1, &100, &deadline);
+
+    env.ledger().set_timestamp(start + 61);
+    client.lock_funds(&depositor, &2, &100, &deadline);
+
+    assert_eq!(client.get_escrow_count(), 2);
+}
+
+/// Whitelisted address bypasses rate limit and cooldown.
+#[test]
+fn test_anti_abuse_whitelisted_address_bypasses_checks() {
+    let (env, client, _) = create_test_env();
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 10_000;
+
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let (token, _token_client, token_admin_client) = create_token_contract(&env, &token_admin);
+    client.init(&admin, &token);
+
+    client.update_anti_abuse_config(&3600, &2, &60);
+    client.set_whitelist(&depositor, &true);
+
+    token_admin_client.mint(&depositor, &50_000);
+
+    // More than max_operations without advancing time; whitelisted so all succeed
+    for i in 1..=5 {
+        client.lock_funds(&depositor, &i, &100, &deadline);
+    }
+    assert_eq!(client.get_escrow_count(), 5);
+}
+
+// =============================================================================
+// Admin and config updates (Issue #465)
+// =============================================================================
+
+/// Admin can update anti-abuse config; new values persist.
+#[test]
+fn test_admin_can_update_anti_abuse_config_persists() {
+    let (env, client, _) = create_test_env();
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+
+    env.mock_all_auths();
+
+    client.init(&admin, &token);
+    client.update_anti_abuse_config(&7200, &5, &120);
+
+    let config = client.get_anti_abuse_config();
+    assert_eq!(config.window_size, 7200);
+    assert_eq!(config.max_operations, 5);
+    assert_eq!(config.cooldown_period, 120);
+}
+
+/// Non-admin cannot update anti-abuse config.
+#[test]
+#[should_panic(expected = "InvalidAction")] // Auth failure when non-admin calls
+fn test_non_admin_cannot_update_anti_abuse_config() {
+    let (env, client, contract_id) = create_test_env();
+    let admin = Address::generate(&env);
+    let non_admin = Address::generate(&env);
+    let token = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.init(&admin, &token);
+
+    // Only non_admin is mocked for this call; contract requires admin.require_auth() so this must panic.
+    env.mock_auths(&[MockAuth {
+        address: &non_admin,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "update_anti_abuse_config",
+            args: (7200u64, 5u32, 120u64).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    client.update_anti_abuse_config(&7200, &5, &120);
 }

@@ -481,6 +481,15 @@ pub struct PauseStateChanged {
     pub timestamp: u64,
 }
 
+/// Public view of anti-abuse config (rate limit and cooldown).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AntiAbuseConfigView {
+    pub window_size: u64,
+    pub max_operations: u32,
+    pub cooldown_period: u64,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FeeConfig {
@@ -1849,6 +1858,38 @@ impl BountyEscrowContract {
         admin.require_auth();
         anti_abuse::set_whitelist(&env, whitelisted_address, whitelisted);
         Ok(())
+    }
+
+    /// Update anti-abuse config (rate limit window, max operations per window, cooldown). Admin only.
+    pub fn update_anti_abuse_config(
+        env: Env,
+        window_size: u64,
+        max_operations: u32,
+        cooldown_period: u64,
+    ) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+        let config = anti_abuse::AntiAbuseConfig {
+            window_size,
+            max_operations,
+            cooldown_period,
+        };
+        anti_abuse::set_config(&env, config);
+        Ok(())
+    }
+
+    /// Get current anti-abuse config (rate limit and cooldown).
+    pub fn get_anti_abuse_config(env: Env) -> AntiAbuseConfigView {
+        let c = anti_abuse::get_config(&env);
+        AntiAbuseConfigView {
+            window_size: c.window_size,
+            max_operations: c.max_operations,
+            cooldown_period: c.cooldown_period,
+        }
     }
 
     /// Retrieves the refund history for a specific bounty.
