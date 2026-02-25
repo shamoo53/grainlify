@@ -100,7 +100,7 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "Config"
+                              "symbol": "RateLimitConfig"
                             }
                           ]
                         },

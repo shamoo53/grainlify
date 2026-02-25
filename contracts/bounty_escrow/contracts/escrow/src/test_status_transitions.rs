@@ -1,6 +1,7 @@
 use super::*;
+use soroban_sdk::testutils::Ledger;
 use soroban_sdk::{
-    testutils::{Address as _, Ledger},
+    testutils::{Address as _, LedgerInfo},
     token, Address, Env,
 };
 
@@ -100,10 +101,16 @@ fn test_locked_to_refunded() {
         EscrowStatus::Locked
     );
 
-    setup
-        .env
-        .ledger()
-        .with_mut(|li| li.timestamp = deadline + 1);
+    setup.env.ledger().set(LedgerInfo {
+        timestamp: deadline + 1,
+        protocol_version: 20,
+        sequence_number: 0,
+        network_id: Default::default(),
+        base_reserve: 0,
+        min_temp_entry_ttl: 0,
+        min_persistent_entry_ttl: 0,
+        max_entry_ttl: 0,
+    });
     setup.escrow.refund(&bounty_id);
     assert_eq!(
         setup.escrow.get_escrow_info(&bounty_id).status,
@@ -161,10 +168,16 @@ fn test_partially_refunded_to_refunded() {
     );
 
     // Second refund completes it
-    setup
-        .env
-        .ledger()
-        .with_mut(|li| li.timestamp = deadline + 1);
+    setup.env.ledger().set(LedgerInfo {
+        timestamp: deadline + 1,
+        protocol_version: 20,
+        sequence_number: 0,
+        network_id: Default::default(),
+        base_reserve: 0,
+        min_temp_entry_ttl: 0,
+        min_persistent_entry_ttl: 0,
+        max_entry_ttl: 0,
+    });
     setup.escrow.refund(&bounty_id);
     assert_eq!(
         setup.escrow.get_escrow_info(&bounty_id).status,
@@ -222,10 +235,16 @@ fn test_released_to_refunded_fails() {
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 
-    setup
-        .env
-        .ledger()
-        .with_mut(|li| li.timestamp = deadline + 1);
+    setup.env.ledger().set(LedgerInfo {
+        timestamp: deadline + 1,
+        protocol_version: 20,
+        sequence_number: 0,
+        network_id: Default::default(),
+        base_reserve: 0,
+        min_temp_entry_ttl: 0,
+        min_persistent_entry_ttl: 0,
+        max_entry_ttl: 0,
+    });
     setup.escrow.refund(&bounty_id);
 }
 
@@ -243,10 +262,16 @@ fn test_released_to_partially_refunded_fails() {
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 
-    setup
-        .env
-        .ledger()
-        .with_mut(|li| li.timestamp = deadline + 1);
+    setup.env.ledger().set(LedgerInfo {
+        timestamp: deadline + 1,
+        protocol_version: 20,
+        sequence_number: 0,
+        network_id: Default::default(),
+        base_reserve: 0,
+        min_temp_entry_ttl: 0,
+        min_persistent_entry_ttl: 0,
+        max_entry_ttl: 0,
+    });
     setup
         .escrow
         .partial_release(&bounty_id, &setup.contributor, &500);
@@ -264,10 +289,16 @@ fn test_refunded_to_locked_fails() {
     setup
         .escrow
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
-    setup
-        .env
-        .ledger()
-        .with_mut(|li| li.timestamp = deadline + 1);
+    setup.env.ledger().set(LedgerInfo {
+        timestamp: deadline + 1,
+        protocol_version: 20,
+        sequence_number: 0,
+        network_id: Default::default(),
+        base_reserve: 0,
+        min_temp_entry_ttl: 0,
+        min_persistent_entry_ttl: 0,
+        max_entry_ttl: 0,
+    });
     setup.escrow.refund(&bounty_id);
 
     setup
@@ -287,10 +318,16 @@ fn test_refunded_to_released_fails() {
     setup
         .escrow
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
-    setup
-        .env
-        .ledger()
-        .with_mut(|li| li.timestamp = deadline + 1);
+    setup.env.ledger().set(LedgerInfo {
+        timestamp: deadline + 1,
+        protocol_version: 20,
+        sequence_number: 0,
+        network_id: Default::default(),
+        base_reserve: 0,
+        min_temp_entry_ttl: 0,
+        min_persistent_entry_ttl: 0,
+        max_entry_ttl: 0,
+    });
     setup.escrow.refund(&bounty_id);
 
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
@@ -308,10 +345,16 @@ fn test_refunded_to_refunded_fails() {
     setup
         .escrow
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
-    setup
-        .env
-        .ledger()
-        .with_mut(|li| li.timestamp = deadline + 1);
+    setup.env.ledger().set(LedgerInfo {
+        timestamp: deadline + 1,
+        protocol_version: 20,
+        sequence_number: 0,
+        network_id: Default::default(),
+        base_reserve: 0,
+        min_temp_entry_ttl: 0,
+        min_persistent_entry_ttl: 0,
+        max_entry_ttl: 0,
+    });
     setup.escrow.refund(&bounty_id);
 
     setup.escrow.refund(&bounty_id);
@@ -329,10 +372,16 @@ fn test_refunded_to_partially_refunded_fails() {
     setup
         .escrow
         .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
-    setup
-        .env
-        .ledger()
-        .with_mut(|li| li.timestamp = deadline + 1);
+    setup.env.ledger().set(LedgerInfo {
+        timestamp: deadline + 1,
+        protocol_version: 20,
+        sequence_number: 0,
+        network_id: Default::default(),
+        base_reserve: 0,
+        min_temp_entry_ttl: 0,
+        min_persistent_entry_ttl: 0,
+        max_entry_ttl: 0,
+    });
     setup.escrow.refund(&bounty_id);
 
     setup

@@ -550,3 +550,42 @@ fn emit_circuit_event(env: &Env, event_type: soroban_sdk::Symbol, value: u32) {
         (value, env.ledger().timestamp()),
     );
 }
+
+// ─────────────────────────────────────────────────────────
+// Invariant Verification
+// ─────────────────────────────────────────────────────────
+
+/// Verifies that the circuit breaker state is internally consistent.
+pub fn verify_circuit_invariants(env: &Env) -> bool {
+    let status = get_status(env);
+    let config = get_config(env);
+
+    match status.state {
+        CircuitState::Open => {
+            // Invariant: In Open state, opened_at must be non-zero
+            if status.opened_at == 0 {
+                return false;
+            }
+            // Invariant: In Open state, failure_count should be >= threshold (unless emergency opened)
+            // Note: We'll allow emergency open, so we don't strictly check threshold here
+            // but we could check if failure_count + emergency_flag is valid.
+        }
+        CircuitState::Closed => {
+            // Invariant: In Closed state, opened_at must be 0
+            if status.opened_at != 0 {
+                return false;
+            }
+            // Invariant: In Closed state, failure_count should be < threshold
+            if status.failure_count >= config.failure_threshold {
+                return false;
+            }
+        }
+        CircuitState::HalfOpen => {
+            // Invariant: success_count should be < success_threshold
+            if status.success_count >= config.success_threshold {
+                return false;
+            }
+        }
+    }
+    true
+}

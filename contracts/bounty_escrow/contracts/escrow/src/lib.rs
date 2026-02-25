@@ -476,6 +476,15 @@ pub struct PauseStateChanged {
     pub timestamp: u64,
 }
 
+/// Public view of anti-abuse config (rate limit and cooldown).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AntiAbuseConfigView {
+    pub window_size: u64,
+    pub max_operations: u32,
+    pub cooldown_period: u64,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FeeConfig {
@@ -1511,7 +1520,6 @@ impl BountyEscrowContract {
                 timestamp: now,
             },
         );
-
         Ok(())
     }
 
@@ -1847,6 +1855,38 @@ impl BountyEscrowContract {
         Ok(())
     }
 
+    /// Update anti-abuse config (rate limit window, max operations per window, cooldown). Admin only.
+    pub fn update_anti_abuse_config(
+        env: Env,
+        window_size: u64,
+        max_operations: u32,
+        cooldown_period: u64,
+    ) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+        let config = anti_abuse::AntiAbuseConfig {
+            window_size,
+            max_operations,
+            cooldown_period,
+        };
+        anti_abuse::set_config(&env, config);
+        Ok(())
+    }
+
+    /// Get current anti-abuse config (rate limit and cooldown).
+    pub fn get_anti_abuse_config(env: Env) -> AntiAbuseConfigView {
+        let c = anti_abuse::get_config(&env);
+        AntiAbuseConfigView {
+            window_size: c.window_size,
+            max_operations: c.max_operations,
+            cooldown_period: c.cooldown_period,
+        }
+    }
+
     /// Retrieves the refund history for a specific bounty.
     ///
     /// # Arguments
@@ -1868,6 +1908,18 @@ impl BountyEscrowContract {
         Ok(escrow.refund_history)
     }
 
+    /// NEW: Verify escrow invariants for a specific bounty
+    pub fn verify_state(env: Env, bounty_id: u64) -> bool {
+        if let Some(escrow) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, Escrow>(&DataKey::Escrow(bounty_id))
+        {
+            invariants::verify_escrow_invariants(&escrow)
+        } else {
+            false
+        }
+    }
     /// Gets refund eligibility information for a bounty.
     ///
     /// # Arguments
@@ -2265,6 +2317,9 @@ impl traits::UpgradeInterface for BountyEscrowContract {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod test_state_verification;
 
 #[cfg(test)]
 mod test;
@@ -2709,6 +2764,8 @@ mod escrow_status_transition_tests {
         );
     }
 }
+#[cfg(test)]
+mod test_deadline_variants;
 #[cfg(test)]
 mod test_query_filters;
 #[cfg(test)]

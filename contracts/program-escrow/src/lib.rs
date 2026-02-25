@@ -150,6 +150,9 @@ mod error_recovery;
 mod reentrancy_guard;
 
 #[cfg(test)]
+mod test_circuit_breaker_audit;
+
+#[cfg(test)]
 mod error_recovery_tests;
 
 #[cfg(test)]
@@ -170,6 +173,16 @@ mod test_granular_pause;
 #[cfg(test)]
 #[cfg(any())]
 mod test_lifecycle;
+
+#[cfg(test)]
+mod test_full_lifecycle;
+
+// ── Step 2: Add these public contract functions to the ProgramEscrowContract
+//    impl block (alongside the existing admin functions) ──────────────────
+
+// ========================================================================
+// Circuit Breaker Management
+// ========================================================================
 
 /// Register the circuit breaker admin. Can only be set once, or changed
 /// by the existing admin.
@@ -278,9 +291,6 @@ const RELEASE_HISTORY: Symbol = symbol_short!("RelHist");
 const NEXT_SCHEDULE_ID: Symbol = symbol_short!("NxtSched");
 const PROGRAM_INDEX: Symbol = symbol_short!("ProgIdx");
 const AUTH_KEY_INDEX: Symbol = symbol_short!("AuthIdx");
-const PROGRAM_REGISTRY: Symbol = symbol_short!("ProgReg2");
-const FEE_CONFIG: Symbol = symbol_short!("FeeConf");
-const BASIS_POINTS: i128 = 10_000;
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -697,6 +707,11 @@ impl ProgramEscrowContract {
             || env.storage().instance().has(&PROGRAM_REGISTRY)
     }
 
+    /// Check if a program exists by its program_id (for batch-registered programs).
+    pub fn program_exists_by_id(env: Env, program_id: String) -> bool {
+        env.storage().instance().has(&DataKey::Program(program_id))
+    }
+
     // ========================================================================
     // Fund Management
     // ========================================================================
@@ -757,8 +772,18 @@ impl ProgramEscrowContract {
         env.storage().instance().set(&DataKey::Admin, &admin);
     }
 
+    /// Set or rotate admin. If no admin is set, sets initial admin. If admin exists, current admin must authorize and the new address becomes admin.
     pub fn set_admin(env: Env, admin: Address) {
-        Self::initialize_contract(env, admin);
+        if env.storage().instance().has(&DataKey::Admin) {
+            let current: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+            current.require_auth();
+        }
+        env.storage().instance().set(&DataKey::Admin, &admin);
+    }
+
+    /// Returns the current admin address, if set.
+    pub fn get_admin(env: Env) -> Option<Address> {
+        env.storage().instance().get(&DataKey::Admin)
     }
 
     pub fn get_program_release_schedules(env: Env) -> Vec<ProgramReleaseSchedule> {
@@ -1307,10 +1332,6 @@ impl ProgramEscrowContract {
             .instance()
             .get(&SCHEDULES)
             .unwrap_or_else(|| Vec::new(&env))
-    }
-
-    pub fn get_program_release_schedules(env: Env) -> Vec<ProgramReleaseSchedule> {
-        Self::get_release_schedules(env)
     }
 
     pub fn get_program_release_history(env: Env) -> Vec<ProgramReleaseHistory> {

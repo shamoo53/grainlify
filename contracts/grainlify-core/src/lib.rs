@@ -348,7 +348,24 @@ mod monitoring {
             last_called: last,
         }
     }
+
+    // NEW: verify_invariants for state consistency
+    pub fn verify_invariants(env: &Env) -> bool {
+        let analytics = get_analytics(env);
+        // Invariant: total errors cannot exceed total operations
+        if analytics.error_count > analytics.operation_count {
+            return false;
+        }
+        // Invariant: total operations should be >= unique users
+        if analytics.operation_count < analytics.unique_users {
+            return false;
+        }
+        true
+    }
 }
+
+#[cfg(test)]
+mod test_core_monitoring;
 // ==================== END MONITORING MODULE ====================
 
 // ============================================================================
@@ -1573,6 +1590,12 @@ mod test {
         assert_eq!(state.from_version, v_before);
         assert_eq!(state.to_version, 3);
     }
+    // Export WASM for testing upgrade/rollback scenarios
+    #[cfg(test)]
+    pub const WASM: &[u8] = include_bytes!("../target/wasm32v1-none/release/grainlify_core.wasm");
+
+    #[cfg(test)]
+    mod upgrade_rollback_tests;
 }
 
 #[cfg(test)]

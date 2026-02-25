@@ -3,23 +3,23 @@ name: Smart Contracts CI/CD
 on:
   pull_request:
     paths:
-      - 'soroban/**'
-      - 'contracts/**'
-      - '.github/workflows/contracts-ci.yml'
+      - "soroban/**"
+      - "contracts/**"
+      - ".github/workflows/contracts-ci.yml"
   push:
     branches:
       - main
       - develop
     paths:
-      - 'soroban/**'
-      - 'contracts/**'
-      - '.github/workflows/contracts-ci.yml'
+      - "soroban/**"
+      - "contracts/**"
+      - ".github/workflows/contracts-ci.yml"
 
 jobs:
   contracts-ci:
     name: Format, Build, Test, and Stellar Build Check
     runs-on: macos-latest
-    
+
     defaults:
       run:
         working-directory: contracts/bounty_escrow
@@ -92,7 +92,7 @@ jobs:
           source $HOME/.cargo/env
           # Verify WASM files were generated
           echo "Checking for generated WASM files..."
-          wasm_file="target/wasm32v1-none/release/bounty_escrow.wasm"
+          wasm_file="$GITHUB_WORKSPACE/contracts/bounty_escrow/target/wasm32v1-none/release/bounty_escrow.wasm"
           if [ ! -f "$wasm_file" ]; then
             echo "Error: WASM file not found"
             echo "Expected: $wasm_file"
